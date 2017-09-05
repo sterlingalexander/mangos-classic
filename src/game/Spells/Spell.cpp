@@ -4319,6 +4319,14 @@ SpellCastResult Spell::CheckCast(bool strict)
                     dispelTarget = true;
                     break;
                 }
+                if (spell->Effect[0] == 6 && spell->EffectApplyAuraName[0] == 23)
+                {
+                     if (this->m_spellInfo->Id == spell->EffectTriggerSpell[0])
+                     {
+                         dispelTarget = true;
+                         break;
+                     }
+                }
             }
 
             if (!dispelTarget)
