@@ -17,13 +17,13 @@
 /* ScriptData
 SDName: world_map_scripts
 SD%Complete: 100
-SDComment: Quest support: 4740, 11538
+SDComment: Quest support: 1126, 4740, 8868, 11538
 SDCategory: World Map Scripts
 EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "world_map_scripts.h"
 
 /* *********************************************************
@@ -42,7 +42,8 @@ struct world_map_eastern_kingdoms : public ScriptedMap
             case NPC_BOLVAR:
             case NPC_PRESTOR:
             case NPC_WINDSOR:
-                m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+                m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+                break;
         }
     }
 
@@ -71,17 +72,40 @@ struct world_map_kalimdor : public ScriptedMap
 
     uint8 m_uiMurkdeepAdds_KilledAddCount;
     std::vector<GhostOPlasmEvent> m_vGOEvents;
+    uint32 m_uiOmenResetTimer;
+    uint32 m_uiOmenMoonlightTimer;
+    uint8 m_uiRocketsCounter;
+    uint32 m_encounter[MAX_ENCOUNTER];
+    bool b_isOmenSpellCreditDone;
+    std::array<std::vector<ObjectGuid>, MAX_ELEMENTS> m_aElementalRiftGUIDs;
+    uint32 m_uiDronesTimer;
 
     void Initialize()
     {
         m_uiMurkdeepAdds_KilledAddCount = 0;
         m_vGOEvents.clear();
+        m_uiOmenResetTimer = 0;
+        m_uiOmenMoonlightTimer = 0;
+        m_uiRocketsCounter = 0;
+        b_isOmenSpellCreditDone = false;
+        for (auto& riftList : m_aElementalRiftGUIDs)
+            riftList.clear();
+        m_uiDronesTimer = 0;
     }
 
     void OnCreatureCreate(Creature* pCreature)
     {
-        if (pCreature->GetEntry() == NPC_MURKDEEP)
-            m_mNpcEntryGuidStore[NPC_MURKDEEP] = pCreature->GetObjectGuid();
+        switch (pCreature->GetEntry())
+        {
+            case NPC_MURKDEEP:
+            case NPC_OMEN:
+            case NPC_AVALANCHION:
+            case NPC_PRINCESS_TEMPESTRIA:
+            case NPC_THE_WINDREAVER:
+            case NPC_BARON_CHARR:
+                m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+                break;
+        }
     }
 
     void OnCreatureDeath(Creature* pCreature)
@@ -138,6 +162,21 @@ struct world_map_kalimdor : public ScriptedMap
                     }
                 }
                 break;
+            case NPC_OMEN:
+                SetData(TYPE_OMEN, DONE);
+                break;
+            case NPC_THE_WINDREAVER:
+                DoDespawnElementalRifts(ELEMENTAL_AIR);
+                break;
+            case NPC_PRINCESS_TEMPESTRIA:
+                DoDespawnElementalRifts(ELEMENTAL_WATER);
+                break;
+            case NPC_BARON_CHARR:
+                DoDespawnElementalRifts(ELEMENTAL_FIRE);
+                break;
+            case NPC_AVALANCHION:
+                DoDespawnElementalRifts(ELEMENTAL_EARTH);
+                break;
         }
     }
 
@@ -146,10 +185,36 @@ struct world_map_kalimdor : public ScriptedMap
         switch (pGo->GetEntry())
         {
             case GO_GHOST_MAGNET:
-                m_vGOEvents.push_back({ pGo->GetObjectGuid(),0,0 }); // insert new event with 0 timer
+                m_vGOEvents.push_back({ pGo->GetObjectGuid(), 0, 0 }); // insert new event with 0 timer
                 pGo->SetActiveObjectState(true);
                 break;
+            case GO_ROCKET_CLUSTER:
+                m_goEntryGuidStore[GO_ROCKET_CLUSTER] = pGo->GetObjectGuid();
+                break;
+            case GO_EARTH_RIFT:
+                m_aElementalRiftGUIDs[ELEMENTAL_EARTH].push_back(pGo->GetObjectGuid());
+                break;
+            case GO_WATER_RIFT:
+                m_aElementalRiftGUIDs[ELEMENTAL_WATER].push_back(pGo->GetObjectGuid());
+                break;
+            case GO_FIRE_RIFT:
+                m_aElementalRiftGUIDs[ELEMENTAL_FIRE].push_back(pGo->GetObjectGuid());
+                break;
+            case GO_AIR_RIFT:
+                m_aElementalRiftGUIDs[ELEMENTAL_AIR].push_back(pGo->GetObjectGuid());
+                break;
         }
+    }
+
+    void DoDespawnElementalRifts(uint8 index)
+    {
+        // Despawn all GO rifts for a given element type, erase the GUIDs for the GOs
+        for (auto guid : m_aElementalRiftGUIDs[index])
+        {
+            if (GameObject* pRift = instance->GetGameObject(guid))
+                pRift->SetLootState(GO_JUST_DEACTIVATED);
+        }
+        m_aElementalRiftGUIDs[index].clear();
     }
 
     bool GhostOPlasmEventStep(GhostOPlasmEvent& eventData)
@@ -166,7 +231,7 @@ struct world_map_kalimdor : public ScriptedMap
 
             return false;
         }
-            
+
 
         if (GameObject* go = instance->GetGameObject(eventData.guid))
         {
@@ -185,8 +250,7 @@ struct world_map_kalimdor : public ScriptedMap
             }
             return true;
         }
-        else
-            return false;
+        return false;
     }
 
     void Update(uint32 diff)
@@ -196,15 +260,117 @@ struct world_map_kalimdor : public ScriptedMap
             for (auto iter = m_vGOEvents.begin(); iter != m_vGOEvents.end();)
             {
                 iter->despawnTimer += diff;
-                if (!GhostOPlasmEventStep((*iter)))                
+                if (!GhostOPlasmEventStep((*iter)))
                     iter = m_vGOEvents.erase(iter);
                 else
                     ++iter;
             }
         }
+
+        if (GetData(TYPE_OMEN) == DONE)
+        {
+            // Timer before Omen event reset (OOC)
+            if (m_uiOmenResetTimer < diff)
+            {
+                if (Creature* pOmen = GetSingleCreatureFromStorage(NPC_OMEN))
+                {
+                    // Return is Omen is in fight
+                    if (pOmen->isInCombat())
+                        return;
+                    pOmen->ForcedDespawn();
+                }
+                m_encounter[TYPE_OMEN] = NOT_STARTED;
+                m_uiOmenResetTimer = 0;
+                m_uiRocketsCounter = 0;
+                m_uiOmenMoonlightTimer = 0;
+                b_isOmenSpellCreditDone = false;
+            }
+            else
+                m_uiOmenResetTimer -= diff;
+
+            // Spell summoning GO traps for buff and quest credit for Omen
+            if (!b_isOmenSpellCreditDone)
+            {
+                if (m_uiOmenMoonlightTimer < diff)
+                {
+                    if (Creature* pOmen = GetSingleCreatureFromStorage(NPC_OMEN))
+                    {
+                        pOmen->CastSpell(pOmen, SPELL_OMEN_MOONLIGHT, TRIGGERED_OLD_TRIGGERED);
+                        b_isOmenSpellCreditDone = true;
+                    }
+                    m_uiOmenMoonlightTimer = 0;
+                }
+                else
+                    m_uiOmenMoonlightTimer -= diff;
+            }
+        }
+        // Used for Hive Tower area trigger in Silithus
+        if (m_uiDronesTimer)
+        {
+            if (m_uiDronesTimer <= diff)
+            {
+                SetData(TYPE_HIVE, NOT_STARTED);
+                m_uiDronesTimer = 0;
+            }
+            else
+                m_uiDronesTimer -= diff;
+        }
     }
 
-    void SetData(uint32 /*uiType*/, uint32 /*uiData*/) {}
+    void SetData(uint32 uiType, uint32 uiData)
+    {
+        if (uiType == TYPE_OMEN)
+        {
+            switch (uiData)
+            {
+                case NOT_STARTED:
+                    // Count another rocket cluster launched
+                    m_uiRocketsCounter++;
+                    if (m_uiRocketsCounter < MAX_ROCKETS)
+                    {
+                        // 25% chance of spawning Minions of Omen (guessed), only if not already spawned (encounter is set to FAIL in that case)
+                        if (GetData(TYPE_OMEN) == NOT_STARTED && urand(0, 1) < 1)
+                            SetData(TYPE_OMEN, SPECIAL); // This will notify the GO to summon Omen's minions
+                    }
+                    // Set the event in motion and notify the GO to summon Omen
+                    else if (GetData(TYPE_OMEN) != IN_PROGRESS && GetData(TYPE_OMEN) != DONE)   // Check that Omen is not already spawned and event is reset
+                        SetData(TYPE_OMEN, IN_PROGRESS);
+
+                    return; // Don't store NOT_STARTED data unless explicitly told so: we use it to count rockets
+                case SPECIAL:
+                    if (GameObject* pRocketCluster = GetSingleGameObjectFromStorage(GO_ROCKET_CLUSTER))
+                    {
+                        for (uint8 i = POS_IDX_MINION_OMEN_START ; i <= POS_IDX_MINION_OMEN_STOP ; i++)
+                            pRocketCluster->SummonCreature(NPC_MINION_OMEN, aSpawnLocations[i][0], aSpawnLocations[i][1], aSpawnLocations[i][2], aSpawnLocations[i][3], TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 15 * MINUTE * IN_MILLISECONDS);
+                    }
+                    break;
+                case IN_PROGRESS:
+                    if (GameObject* pRocketCluster = GetSingleGameObjectFromStorage(GO_ROCKET_CLUSTER))
+                    {
+                        if (Creature* pOmen = pRocketCluster->SummonCreature(NPC_OMEN, aSpawnLocations[POS_IDX_OMEN_SPAWN][0], aSpawnLocations[POS_IDX_OMEN_SPAWN][1], aSpawnLocations[POS_IDX_OMEN_SPAWN][2], aSpawnLocations[POS_IDX_OMEN_SPAWN][3], TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 15 * MINUTE * IN_MILLISECONDS))
+                        {
+                            // Moving him to the lake bank
+                            pOmen->SetWalk(true);
+                            pOmen->GetMotionMaster()->MovePoint(1, aSpawnLocations[POS_IDX_OMEN_MOVE][0], aSpawnLocations[POS_IDX_OMEN_MOVE][1], aSpawnLocations[POS_IDX_OMEN_MOVE][2]);
+                            m_uiOmenResetTimer = 15 * MINUTE * IN_MILLISECONDS; // Reset after 15 minutes if not engaged or defeated
+                        }
+                    }
+                    break;
+                case DONE:
+                    m_uiOmenMoonlightTimer = 5 * IN_MILLISECONDS;            // Timer before casting the end quest spell
+                    m_uiOmenResetTimer = 5 * MINUTE * IN_MILLISECONDS;       // Prevent another summoning of Omen for 5 minutes (based on spell duration)
+                    break;
+            }
+        }
+        else if (uiType == TYPE_HIVE)
+        {
+            if (uiData == IN_PROGRESS)
+            	m_uiDronesTimer = 5 * MINUTE * IN_MILLISECONDS;
+        }
+        m_encounter[uiType] = uiData;
+    }
+
+    uint32 GetData(uint32 uiType) const override { return m_encounter[uiType]; }
 };
 
 InstanceData* GetInstanceData_world_map_kalimdor(Map* pMap)
@@ -214,9 +380,7 @@ InstanceData* GetInstanceData_world_map_kalimdor(Map* pMap)
 
 void AddSC_world_map_scripts()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "world_map_eastern_kingdoms";
     pNewScript->GetInstanceData = &GetInstanceData_world_map_eastern_kingdoms;
     pNewScript->RegisterSelf();

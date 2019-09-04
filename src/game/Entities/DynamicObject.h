@@ -21,6 +21,7 @@
 
 #include "Entities/Object.h"
 #include "Server/DBCEnums.h"
+#include "Spells/SpellTargetDefines.h"
 #include "Entities/Unit.h"
 
 enum DynamicObjectType
@@ -40,8 +41,8 @@ class DynamicObject : public WorldObject
         void AddToWorld() override;
         void RemoveFromWorld() override;
 
-        bool Create(uint32 guidlow, Unit* caster, uint32 spellId, SpellEffectIndex effIndex, float x, float y, float z, int32 duration, float radius, DynamicObjectType type);
-        void Update(uint32 update_diff, uint32 p_time) override;
+        bool Create(uint32 guidlow, Unit* caster, uint32 spellId, SpellEffectIndex effIndex, float x, float y, float z, int32 duration, float radius, DynamicObjectType type, SpellTarget target, int32 damage, int32 basePoints);
+        void Update(const uint32 diff) override;
         void Delete();
         uint32 GetSpellId() const { return m_spellId; }
         SpellEffectIndex GetEffIndex() const { return m_effIndex; }
@@ -52,14 +53,23 @@ class DynamicObject : public WorldObject
         void SetCasterGuid(ObjectGuid guid) { SetGuidValue(DYNAMICOBJECT_CASTER, guid); }
         Unit* GetCaster() const;
         float GetRadius() const { return m_radius; }
+        int32 const& GetDamage() const { return m_damage; }
+        int32 const& GetBasePoints() const { return m_basePoints; }
         DynamicObjectType GetType() const { return (DynamicObjectType)GetByteValue(DYNAMICOBJECT_BYTES, 0); }
         bool IsAffecting(Unit* unit) const { return m_affected.find(unit->GetObjectGuid()) != m_affected.end(); }
         void AddAffected(Unit* unit) { m_affected.insert(unit->GetObjectGuid()); }
         void RemoveAffected(Unit* unit) { m_affected.erase(unit->GetObjectGuid()); }
         void Delay(int32 delaytime);
 
-        bool IsHostileTo(Unit const* unit) const override;
-        bool IsFriendlyTo(Unit const* unit) const override;
+        ReputationRank GetReactionTo(Unit const* unit) const override;
+
+        bool IsEnemy(Unit const* unit) const override;
+        bool IsFriend(Unit const* unit) const override;
+
+        bool CanAttackSpell(Unit const* target, SpellEntry const* spellInfo = nullptr, bool isAOE = false) const override;
+        bool CanAssistSpell(Unit const* target, SpellEntry const* spellInfo = nullptr) const override;
+
+        void OnPersistentAreaAuraEnd();
 
         float GetObjectBoundingRadius() const override      // overwrite WorldObject version
         {
@@ -67,6 +77,7 @@ class DynamicObject : public WorldObject
         }
 
         bool isVisibleForInState(Player const* u, WorldObject const* viewPoint, bool inVisibleList) const override;
+        SpellTarget GetTarget() const { return m_target; }
 
         GridReference<DynamicObject>& GetGridRef() { return m_gridRef; }
 
@@ -77,6 +88,9 @@ class DynamicObject : public WorldObject
         float m_radius;                                     // radius apply persistent effect, 0 = no persistent effect
         bool m_positive;
         GuidSet m_affected;
+        SpellTarget m_target;
+        int32 m_damage;
+        int32 m_basePoints;
     private:
         GridReference<DynamicObject> m_gridRef;
 };

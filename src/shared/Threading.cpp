@@ -97,34 +97,34 @@ void Thread::setPriority(Priority priority)
 
     switch (priority)
     {
-        case Priority_Realtime: _ok = SetThreadPriority(handle, THREAD_PRIORITY_TIME_CRITICAL) == 0; break;
-        case Priority_Highest : _ok = SetThreadPriority(handle, THREAD_PRIORITY_HIGHEST)       == 0; break;
-        case Priority_High    : _ok = SetThreadPriority(handle, THREAD_PRIORITY_ABOVE_NORMAL)  == 0; break;
-        case Priority_Normal  : _ok = SetThreadPriority(handle, THREAD_PRIORITY_NORMAL)        == 0; break;
-        case Priority_Low     : _ok = SetThreadPriority(handle, THREAD_PRIORITY_BELOW_NORMAL)  == 0; break;
-        case Priority_Lowest  : _ok = SetThreadPriority(handle, THREAD_PRIORITY_LOWEST)        == 0; break;
-        case Priority_Idle    : _ok = SetThreadPriority(handle, THREAD_PRIORITY_IDLE)          == 0; break;
+        case Priority_Realtime: _ok = SetThreadPriority(handle, THREAD_PRIORITY_TIME_CRITICAL) != 0; break;
+        case Priority_Highest: _ok = SetThreadPriority(handle, THREAD_PRIORITY_HIGHEST) != 0; break;
+        case Priority_High: _ok = SetThreadPriority(handle, THREAD_PRIORITY_ABOVE_NORMAL) != 0; break;
+        case Priority_Normal: _ok = SetThreadPriority(handle, THREAD_PRIORITY_NORMAL) != 0; break;
+        case Priority_Low: _ok = SetThreadPriority(handle, THREAD_PRIORITY_BELOW_NORMAL) != 0; break;
+        case Priority_Lowest: _ok = SetThreadPriority(handle, THREAD_PRIORITY_LOWEST) != 0; break;
+        case Priority_Idle: _ok = SetThreadPriority(handle, THREAD_PRIORITY_IDLE) != 0; break;
     }
 
-        /* MaNGOS use priority for Windows case only
-            commented code just for POSIX way reference if will need
-         #elif define _POSIX_PRIORITY_SCHEDULING
+    /* MaNGOS use priority for Windows case only
+        commented code just for POSIX way reference if will need
+     #elif define _POSIX_PRIORITY_SCHEDULING
 
-             int retcode;
-             int policy;
+         int retcode;
+         int policy;
 
-             struct sched_param param;
+         struct sched_param param;
 
-             if (pthread_getschedparam(handle, &policy, &param)) == 0)
-             {
-                 policy = SCHED_FIFO;
-                 param.sched_priority = ???priority;
+         if (pthread_getschedparam(handle, &policy, &param)) == 0)
+         {
+             policy = SCHED_FIFO;
+             param.sched_priority = ???priority;
 
-                 if (pthread_setschedparam(threadID, policy, &param) != 0)
-                     _ok = false;
-             } else
+             if (pthread_setschedparam(threadID, policy, &param) != 0)
                  _ok = false;
-         */
+         } else
+             _ok = false;
+     */
 #endif
 
     // remove this ASSERT in case you don't want to know is thread priority change was successful or not

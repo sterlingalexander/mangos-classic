@@ -15,11 +15,6 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
-/**
- * \addtogroup game
- * @{
- * \file
- */
 
 #ifndef MANGOS_SPELLAURADEFINES_H
 #define MANGOS_SPELLAURADEFINES_H
@@ -29,7 +24,13 @@
 
 enum AuraFlags
 {
-    AFLAG_MASK              = 0x09
+    AFLAG_NONE                  = 0x00,
+    AFLAG_CANCELABLE            = 0x01,
+    ALFAG_UNK2                  = 0x02,
+    AFLAG_UNK3                  = 0x04,
+    AFLAG_UNK4                  = 0x08,
+
+    AFLAG_MASK_ALL              = 0x0F
 };
 
 /**

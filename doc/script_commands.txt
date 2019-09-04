@@ -50,6 +50,7 @@ The action to execute.
 
 Range in which the buddy defined in buddy_entry will be searched
 In case of SCRIPT_FLAG_BUDDY_BY_GUID this field is the buddy's guid!
+In case of SCRIPT_FLAG_BUDDY_BY_POOL this field is the buddy's pool id!
 
 -- --------------------------
 ## data_flags
@@ -65,6 +66,7 @@ Field which holds a combination of these flags:
     SCRIPT_FLAG_BUDDY_BY_GUID               = 0x10      (Interpret search_radius as buddy's guid)
     SCRIPT_FLAG_BUDDY_IS_PET                = 0x20      (Do not search for an npc, but for a pet)
     SCRIPT_FLAG_BUDDY_IS_DESPAWNED          = 0X40      (Search for a buddy that is dead or despawned)
+    SCRIPT_FLAG_BUDDY_BY_POOL               = 0x80      (buddy should be part of a pool)
 
 Detailed meaning described below!
 
@@ -149,6 +151,13 @@ are:
 7: buddy  ->  buddy
 Where "A  ->  B" means that the command is executed from A with B as target.
 
+Defining a buddy could be done in several way:
+    default                                         (take the buddy by entry)
+    SCRIPT_FLAG_BUDDY_BY_GUID               = 0x10  (take the buddy by guid)
+    SCRIPT_FLAG_BUDDY_IS_PET                = 0x20  (buddy is a pet)
+    SCRIPT_FLAG_BUDDY_IS_DESPAWNED          = 0x40  (buddy is dead or despawned)
+    SCRIPT_FLAG_BUDDY_BY_POOL               = 0x80  (buddy should be part of a pool)
+
 -- --------------------------
 ## Each command has different parameters, and are as follows:
 -- --------------------------
@@ -201,6 +210,8 @@ Where "A  ->  B" means that the command is executed from A with B as target.
                                             * datalong3 = pathId - creature_movement_template
                                             * data_flags & SCRIPT_FLAG_COMMAND_ADDITIONAL: summon as active object
                                             * dataint = (bool) setRun; 0 = off (default), 1 = on
+                                            * dataint2 = factionId - if 0 is set, faction is from DB entry
+                                            * dataint3 = modelId - if 0 is set, model is from DB entry
 
 11 SCRIPT_COMMAND_OPEN_DOOR                 source = any
                                             * datalong = db_guid (can be skipped for buddy)
@@ -228,6 +239,7 @@ Where "A  ->  B" means that the command is executed from A with B as target.
 17 SCRIPT_COMMAND_CREATE_ITEM               source or target must be player
                                             * datalong = item entry
                                             * datalong2 = amount
+                                            * data_flags & SCRIPT_FLAG_COMMAND_ADDITIONAL: remove the item from player by the given amount
 
 18 SCRIPT_COMMAND_DESPAWN_SELF              resultingSource = Creature
                                             * datalong = despawn delay
@@ -286,6 +298,7 @@ Where "A  ->  B" means that the command is executed from A with B as target.
 
 31 SCRIPT_COMMAND_TERMINATE_SCRIPT          * datalong = search for npc entry if provided
                                             * datalong2= search distance
+                                            * datalong3= pool id
                                             * !(data_flags & SCRIPT_FLAG_COMMAND_ADDITIONAL): if npc not alive found, terminate script
                                                 data_flags & SCRIPT_FLAG_COMMAND_ADDITIONAL:  if npc alive found, terminate script
                                             * dataint  = change of waittime (MILLIESECONDS) of a current waypoint movement type (negative values will decrease time)
@@ -314,6 +327,7 @@ Where "A  ->  B" means that the command is executed from A with B as target.
                                             * datalong = 0:  Move resultingSource towards resultingTarget
                                             * datalong != 0: Move resultingSource to a random point between datalong2..datalong around resultingTarget.
                                               orientation != 0: Obtain a random point around resultingTarget in direction of orientation
+                                            * datalong3 = Exact contact point distance, to be used when you want to stop moving as soon as you're within this distance of the target
                                             * data_flags & SCRIPT_FLAG_COMMAND_ADDITIONAL Obtain a point in direction of resTarget->GetOrientation + orientation
                                               for resTarget == resSource and orientation == 0 this will mean resSource moving forward
 
@@ -346,3 +360,12 @@ Where "A  ->  B" means that the command is executed from A with B as target.
                                             * source and target of command define source and target of launched dbscript
                                             * datalong = dbscripts_on_relay id
                                             * datalong2 = dbscript_random_templates id
+
+46 SCRIPT_COMMAND_CAST_CUSTOM_SPELL         resultingSource = Unit, cast spell at resultingTarget = Unit
+                                            * datalong = spell id
+                                            * datalong2 = TriggerCastFlags
+                                            * dataint1-dataint3 define the &bp for the spell. At least one field is required.
+
+47 SCRIPT_COMMAND_INTERRUPT_SPELL           Interrupt spell in specific slot
+                                            * source must be unit
+                                            * datalong = SpellType enum CurrentSpellTypes

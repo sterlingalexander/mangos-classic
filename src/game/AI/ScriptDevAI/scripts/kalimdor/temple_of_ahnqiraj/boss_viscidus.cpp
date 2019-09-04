@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "temple_of_ahnqiraj.h"
 
 enum
@@ -49,7 +49,8 @@ enum
     // When frost damage exceeds a certain limit, then boss explodes
     SPELL_REJOIN_VISCIDUS       = 25896,
     SPELL_VISCIDUS_EXPLODE      = 25938,
-    SPELL_VISCIDUS_SUICIDE      = 26003,                    // cast when boss explodes and is below 5% Hp - should trigger 26002
+    SPELL_VISCIDUS_SUICIDE_TRIGGER = 26003,                    // cast when boss explodes and is below 5% Hp - should trigger 26002
+    SPELL_VISCIDUS_SUICIDE      = 26002,
     SPELL_DESPAWN_GLOBS         = 26608,
 
     SPELL_MEMBRANE_VISCIDUS     = 25994,                    // damage reduction spell
@@ -172,8 +173,8 @@ struct boss_viscidusAI : public ScriptedAI
             {
                 m_creature->SetVisibility(VISIBILITY_ON);
 
-                if (DoCastSpellIfCan(m_creature, SPELL_VISCIDUS_SUICIDE, CAST_TRIGGERED) == CAST_OK)
-                    m_creature->DealDamage(m_creature, m_creature->GetHealth(), nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NONE, nullptr, false);
+                if (DoCastSpellIfCan(m_creature, SPELL_VISCIDUS_SUICIDE_TRIGGER, CAST_TRIGGERED) == CAST_OK)
+                    m_creature->CastSpell(nullptr, SPELL_VISCIDUS_SUICIDE, TRIGGERED_OLD_TRIGGERED);
             }
             else if (m_lGlobesGuidList.empty())
             {
@@ -209,7 +210,7 @@ struct boss_viscidusAI : public ScriptedAI
         }
     }
 
-    void DamageTaken(Unit* pDealer, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    void DamageTaken(Unit* pDealer, uint32& /*damage*/, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
         if (m_uiPhase != PHASE_FROZEN)
             return;
@@ -221,8 +222,8 @@ struct boss_viscidusAI : public ScriptedAI
         {
             if (m_creature->GetHealthPercent() <= 5.0f)
             {
-                if (DoCastSpellIfCan(m_creature, SPELL_VISCIDUS_SUICIDE, CAST_TRIGGERED) == CAST_OK)
-                    m_creature->DealDamage(m_creature, m_creature->GetHealth(), nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NONE, nullptr, false);
+                if (DoCastSpellIfCan(m_creature, SPELL_VISCIDUS_SUICIDE_TRIGGER, CAST_TRIGGERED) == CAST_OK)
+                    m_creature->CastSpell(nullptr, SPELL_VISCIDUS_SUICIDE, TRIGGERED_OLD_TRIGGERED);
             }
             else if (DoCastSpellIfCan(m_creature, SPELL_VISCIDUS_EXPLODE, CAST_TRIGGERED | CAST_INTERRUPT_PREVIOUS) == CAST_OK)
             {
@@ -284,7 +285,7 @@ struct boss_viscidusAI : public ScriptedAI
         }
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A)
         {
@@ -350,7 +351,7 @@ struct boss_viscidusAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_viscidus(Creature* pCreature)
+UnitAI* GetAI_boss_viscidus(Creature* pCreature)
 {
     return new boss_viscidusAI(pCreature);
 }
@@ -378,16 +379,14 @@ struct npc_glob_of_viscidusAI : public ScriptedAI
     void UpdateAI(const uint32 /*uiDiff*/) override { }
 };
 
-CreatureAI* GetAI_npc_glob_of_viscidus(Creature* pCreature)
+UnitAI* GetAI_npc_glob_of_viscidus(Creature* pCreature)
 {
     return new npc_glob_of_viscidusAI(pCreature);
 }
 
 void AddSC_boss_viscidus()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_viscidus";
     pNewScript->GetAI = &GetAI_boss_viscidus;
     pNewScript->pEffectAuraDummy = &EffectAuraDummy_spell_aura_dummy_viscidus_freeze;

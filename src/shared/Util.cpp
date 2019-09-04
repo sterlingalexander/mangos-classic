@@ -23,7 +23,6 @@
 
 #include <boost/asio.hpp>
 
-#include <random>
 #include <chrono>
 #include <cstdarg>
 
@@ -34,6 +33,11 @@ std::mt19937* initRand()
 }
 
 static MaNGOS::thread_local_ptr<std::mt19937> mtRand(&initRand);
+
+std::mt19937* GetRandomGenerator()
+{
+    return mtRand.get();
+}
 
 uint32 WorldTimer::m_iTime = 0;
 uint32 WorldTimer::m_iPrevTime = 0;
@@ -74,8 +78,8 @@ uint32 urand(uint32 min, uint32 max)
 
 float frand(float min, float max)
 {
-    std::uniform_real_distribution<double> dist(min, max);
-    return float(dist(*mtRand.get()));
+    std::uniform_real_distribution<float> dist(min, max);
+    return dist(*mtRand.get());
 }
 
 int32 irand()
@@ -118,16 +122,16 @@ Tokens StrSplit(const std::string& src, const std::string& sep)
 {
     Tokens r;
     std::string s;
-    for (std::string::const_iterator i = src.begin(); i != src.end(); ++i)
+    for (char i : src)
     {
-        if (sep.find(*i) != std::string::npos)
+        if (sep.find(i) != std::string::npos)
         {
             if (s.length()) r.push_back(s);
-            s = "";
+            s.clear();
         }
         else
         {
-            s += *i;
+            s += i;
         }
     }
     if (s.length()) r.push_back(s);
@@ -211,16 +215,16 @@ uint32 TimeStringToSecs(const std::string& timestring)
     uint32 buffer     = 0;
     uint32 multiplier = 0;
 
-    for (std::string::const_iterator itr = timestring.begin(); itr != timestring.end(); ++itr)
+    for (char itr : timestring)
     {
-        if (isdigit(*itr))
+        if (isdigit(itr))
         {
             buffer *= 10;
-            buffer += (*itr) - '0';
+            buffer += itr - '0';
         }
         else
         {
-            switch (*itr)
+            switch (itr)
             {
                 case 'd': multiplier = DAY;     break;
                 case 'h': multiplier = HOUR;    break;
@@ -261,7 +265,7 @@ bool IsIPAddress(char const* ipaddress)
     // Drawback: all valid ip address formats are recognized e.g.: 12.23,121234,0xABCD)
     boost::system::error_code ec;
     boost::asio::ip::address::from_string(ipaddress, ec);
-    return !!ec;
+    return ec.value() == 0;
 }
 
 /// create PID file
@@ -289,73 +293,42 @@ size_t utf8length(std::string& utf8str)
     {
         return utf8::distance(utf8str.c_str(), utf8str.c_str() + utf8str.size());
     }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         utf8str = "";
         return 0;
     }
 }
 
-void utf8truncate(std::string& utf8str, size_t len)
+bool Utf8toWStr(const std::string& utf8str, std::wstring& wstr, size_t max_len)
 {
+    if (utf8str.empty())
+    {
+        wstr = std::wstring();
+        return true;
+    }
+
     try
     {
-        size_t wlen = utf8::distance(utf8str.c_str(), utf8str.c_str() + utf8str.size());
-        if (wlen <= len)
-            return;
+        // A UTF8 string can have a maximum of 4 octets per character
+        // A 4 octet char can take up to two UTF16 characters (4*8 = 32 / 16 = 2)
+        // The UTF8 string may also actually be ASCII, in which case no truncation
+        // takes place! The final string length is therefore unknown. Reserve
+        // as long as the OG string, and back-insert
+        wstr.resize(utf8str.size());
 
-        std::wstring wstr;
-        wstr.resize(wlen);
-        utf8::utf8to16(utf8str.c_str(), utf8str.c_str() + utf8str.size(), &wstr[0]);
-        wstr.resize(len);
-        char* oend = utf8::utf16to8(wstr.c_str(), wstr.c_str() + wstr.size(), &utf8str[0]);
-        utf8str.resize(oend - (&utf8str[0]));               // remove unused tail
-    }
-    catch (std::exception)
-    {
-        utf8str = "";
-    }
-}
+        auto end = utf8::utf8to16(utf8str.cbegin(), utf8str.cend(), wstr.begin());
 
-bool Utf8toWStr(char const* utf8str, size_t csize, wchar_t* wstr, size_t& wsize)
-{
-    try
-    {
-        size_t len = utf8::distance(utf8str, utf8str + csize);
-        if (len > wsize)
+        if (end != wstr.end())
+            wstr.erase(end, wstr.end());
+
+        // truncate to max len
+        if (!!max_len && wstr.size() > max_len)
         {
-            if (wsize > 0)
-                wstr[0] = L'\0';
-            wsize = 0;
-            return false;
+            wstr.resize(max_len);
         }
-
-        wsize = len;
-        utf8::utf8to16(utf8str, utf8str + csize, wstr);
-        wstr[len] = L'\0';
     }
-    catch (std::exception)
-    {
-        if (wsize > 0)
-            wstr[0] = L'\0';
-        wsize = 0;
-        return false;
-    }
-
-    return true;
-}
-
-bool Utf8toWStr(const std::string& utf8str, std::wstring& wstr)
-{
-    try
-    {
-        size_t len = utf8::distance(utf8str.c_str(), utf8str.c_str() + utf8str.size());
-        wstr.resize(len);
-
-        if (len)
-            utf8::utf8to16(utf8str.c_str(), utf8str.c_str() + utf8str.size(), &wstr[0]);
-    }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         wstr = L"";
         return false;
@@ -364,38 +337,34 @@ bool Utf8toWStr(const std::string& utf8str, std::wstring& wstr)
     return true;
 }
 
-bool WStrToUtf8(wchar_t* wstr, size_t size, std::string& utf8str)
+void utf8truncate(std::string& utf8str, size_t len)
 {
     try
     {
-        std::string utf8str2;
-        utf8str2.resize(size * 4);                          // allocate for most long case
-
-        char* oend = utf8::utf16to8(wstr, wstr + size, &utf8str2[0]);
-        utf8str2.resize(oend - (&utf8str2[0]));             // remove unused tail
-        utf8str = utf8str2;
+        std::wstring wstr;
+        Utf8toWStr(utf8str, wstr, len);
+        WStrToUtf8(wstr, utf8str);
     }
     catch (std::exception)
     {
         utf8str = "";
-        return false;
     }
-
-    return true;
 }
 
-bool WStrToUtf8(std::wstring wstr, std::string& utf8str)
+bool WStrToUtf8(const std::wstring& wstr, std::string& utf8str)
 {
     try
     {
         std::string utf8str2;
         utf8str2.resize(wstr.size() * 4);                   // allocate for most long case
 
-        char* oend = utf8::utf16to8(wstr.c_str(), wstr.c_str() + wstr.size(), &utf8str2[0]);
-        utf8str2.resize(oend - (&utf8str2[0]));             // remove unused tail
+        auto end = utf8::utf16to8(wstr.cbegin(), wstr.cend(), utf8str2.begin());
+        if (end != utf8str2.end())
+            utf8str2.erase(end, utf8str2.end());
+
         utf8str = utf8str2;
     }
-    catch (std::exception)
+    catch (const std::exception&)
     {
         utf8str = "";
         return false;
@@ -438,7 +407,7 @@ bool consoleToUtf8(const std::string& conStr, std::string& utf8str)
 #endif
 }
 
-bool Utf8FitTo(const std::string& str, std::wstring search)
+bool Utf8FitTo(const std::string& str, const std::wstring& search)
 {
     std::wstring temp;
 
@@ -448,10 +417,7 @@ bool Utf8FitTo(const std::string& str, std::wstring search)
     // converting to lower case
     wstrToLower(temp);
 
-    if (temp.find(search) == std::wstring::npos)
-        return false;
-
-    return true;
+    return temp.find(search) != std::wstring::npos;
 }
 
 void utf8printf(FILE* out, const char* str, ...)
@@ -465,16 +431,21 @@ void utf8printf(FILE* out, const char* str, ...)
 void vutf8printf(FILE* out, const char* str, va_list* ap)
 {
 #if PLATFORM == PLATFORM_WINDOWS
-    char temp_buf[32 * 1024];
-    wchar_t wtemp_buf[32 * 1024];
+    std::string temp_buf;
+    temp_buf.resize(32 * 1024);
+    std::wstring wtemp_buf;
 
-    size_t temp_len = vsnprintf(temp_buf, 32 * 1024, str, *ap);
+    size_t temp_len = vsnprintf(&temp_buf[0], 32 * 1024, str, *ap);
+    temp_buf.resize(strlen(temp_buf.c_str())); // Resize to match the formatted string
 
-    size_t wtemp_len = 32 * 1024 - 1;
-    Utf8toWStr(temp_buf, temp_len, wtemp_buf, wtemp_len);
+    if (!temp_buf.empty())
+    {
+        Utf8toWStr(temp_buf, wtemp_buf, 32 * 1024);
+        wtemp_buf.push_back('\0');
 
-    CharToOemBuffW(&wtemp_buf[0], &temp_buf[0], wtemp_len + 1);
-    fprintf(out, "%s", temp_buf);
+        CharToOemBuffW(&wtemp_buf[0], &temp_buf[0], wtemp_buf.size());
+    }
+    fprintf(out, "%s", temp_buf.c_str());
 #else
     vfprintf(out, str, *ap);
 #endif

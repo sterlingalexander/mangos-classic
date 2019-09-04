@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "molten_core.h"
 
 enum
@@ -151,7 +151,7 @@ struct mob_fireswornAI : public ScriptedAI
             DoCastSpellIfCan(m_creature, SPELL_MASSIVE_ERUPTION);
     }
 
-    void UpdateAI(const uint32 uiDiff) override
+    void UpdateAI(const uint32 /*uiDiff*/) override
     {
         if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
             return;
@@ -160,21 +160,19 @@ struct mob_fireswornAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_garr(Creature* pCreature)
+UnitAI* GetAI_boss_garr(Creature* pCreature)
 {
     return new boss_garrAI(pCreature);
 }
 
-CreatureAI* GetAI_mob_firesworn(Creature* pCreature)
+UnitAI* GetAI_mob_firesworn(Creature* pCreature)
 {
     return new mob_fireswornAI(pCreature);
 }
 
 void AddSC_boss_garr()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_garr";
     pNewScript->GetAI = &GetAI_boss_garr;
     pNewScript->RegisterSelf();

@@ -37,6 +37,7 @@
 #include <memory>
 
 #include <boost/asio.hpp>
+#include <utility>
 
 #if defined( __GNUC__ )
 #pragma pack(1)
@@ -54,10 +55,10 @@ struct ServerPktHeader
 #pragma pack(pop)
 #endif
 
-WorldSocket::WorldSocket(boost::asio::io_service &service, std::function<void (Socket *)> closeHandler)
-    : Socket(service, closeHandler), m_lastPingTime(std::chrono::system_clock::time_point::min()), m_overSpeedPings(0),
-      m_useExistingHeader(false), m_session(nullptr),m_seed(urand())
-{}
+WorldSocket::WorldSocket(boost::asio::io_service& service, std::function<void (Socket*)> closeHandler) : Socket(service, std::move(closeHandler)), m_lastPingTime(std::chrono::system_clock::time_point::min()), m_overSpeedPings(0), m_existingHeader(),
+    m_useExistingHeader(false), m_session(nullptr), m_seed(urand())
+{
+}
 
 void WorldSocket::SendPacket(const WorldPacket& pct, bool immediate)
 {
@@ -75,12 +76,12 @@ void WorldSocket::SendPacket(const WorldPacket& pct, bool immediate)
     header.size = static_cast<uint16>(pct.size() + 2);
     EndianConvertReverse(header.size);
 
-    m_crypt.EncryptSend(reinterpret_cast<uint8 *>(&header), sizeof(header));
+    m_crypt.EncryptSend(reinterpret_cast<uint8*>(&header), sizeof(header));
 
     if (pct.size() > 0)
-        Write(reinterpret_cast<const char *>(&header), sizeof(header), reinterpret_cast<const char *>(pct.contents()), pct.size());
+        Write(reinterpret_cast<const char*>(&header), sizeof(header), reinterpret_cast<const char*>(pct.contents()), pct.size());
     else
-        Write(reinterpret_cast<const char *>(&header), sizeof(header));
+        Write(reinterpret_cast<const char*>(&header), sizeof(header));
 
     if (immediate)
         ForceFlushOut();
@@ -121,13 +122,13 @@ bool WorldSocket::ProcessIncomingData()
     }
     else
     {
-        if (!Read((char *)&header, sizeof(ClientPktHeader)))
+        if (!Read((char*)&header, sizeof(ClientPktHeader)))
         {
             errno = EBADMSG;
             return false;
         }
 
-        m_crypt.DecryptRecv((uint8 *)&header, sizeof(ClientPktHeader));
+        m_crypt.DecryptRecv((uint8*)&header, sizeof(ClientPktHeader));
 
         EndianConvertReverse(header.size);
         EndianConvert(header.cmd);
@@ -138,7 +139,7 @@ bool WorldSocket::ProcessIncomingData()
     if ((header.size < 4) || (header.size > 0x2800) || (header.cmd >= NUM_MSG_TYPES))
     {
         sLog.outError("WorldSocket::ProcessIncomingData: client sent malformed packet size = %u , cmd = %u", header.size, header.cmd);
-    
+
         errno = EINVAL;
         return false;
     }
@@ -234,11 +235,11 @@ bool WorldSocket::ProcessIncomingData()
     return true;
 }
 
-bool WorldSocket::HandleAuthSession(WorldPacket &recvPacket)
+bool WorldSocket::HandleAuthSession(WorldPacket& recvPacket)
 {
     // NOTE: ATM the socket is singlethread, have this in mind ...
     uint8 digest[20];
-    uint32 clientSeed, id, security;
+    uint32 clientSeed;
     uint32 ClientBuild;
     LocaleConstant locale;
     std::string account;
@@ -336,8 +337,8 @@ bool WorldSocket::HandleAuthSession(WorldPacket &recvPacket)
         }
     }
 
-    id = fields[0].GetUInt32();
-    security = fields[1].GetUInt16();
+    uint32 id = fields[0].GetUInt32();
+    uint32 security = fields[1].GetUInt16();
     if (security > SEC_ADMINISTRATOR)                       // prevent invalid security settings in DB
         security = SEC_ADMINISTRATOR;
 
@@ -406,11 +407,11 @@ bool WorldSocket::HandleAuthSession(WorldPacket &recvPacket)
 
         SendPacket(packet);
 
-        sLog.outError("WorldSocket::HandleAuthSession: Sent Auth Response (authentification failed).");
+        sLog.outError("WorldSocket::HandleAuthSession: Sent Auth Response (authentification failed), account ID: %u.", id);
         return false;
     }
 
-    const std::string &address = GetRemoteAddress();
+    const std::string& address = GetRemoteAddress();
 
     DEBUG_LOG("WorldSocket::HandleAuthSession: Client '%s' authenticated successfully from %s.",
               account.c_str(),
@@ -423,21 +424,45 @@ bool WorldSocket::HandleAuthSession(WorldPacket &recvPacket)
     SqlStatement stmt = LoginDatabase.CreateStatement(updAccount, "UPDATE account SET last_ip = ? WHERE username = ?");
     stmt.PExecute(address.c_str(), account.c_str());
 
-    m_session = new WorldSession(id, this, AccountTypes(security), mutetime, locale);
     m_crypt.Init(&K);
-
-    m_session->LoadTutorialsData();
-
-    sWorld.AddSession(m_session);
 
     // Create and send the Addon packet
     if (sAddOnHandler.BuildAddonPacket(recvPacket, SendAddonPacked))
         SendPacket(SendAddonPacked);
 
+    m_session = sWorld.FindSession(id);
+    if (m_session)
+    {
+        // Session exist so player is reconnecting
+        // check if we can request a new socket
+        if (!m_session->RequestNewSocket(this))
+            return false;
+
+        // wait session going to be ready
+        while (m_session->GetState() != WORLD_SESSION_STATE_CHAR_SELECTION)
+        {
+            // just wait
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+            if (IsClosed())
+                return false;
+        }
+    }
+    else
+    {
+        // new session
+        if (!(m_session = new WorldSession(id, this, AccountTypes(security), mutetime, locale)))
+            return false;
+
+        m_session->LoadTutorialsData();
+
+        sWorld.AddSession(m_session);
+    }
+
     return true;
 }
 
-bool WorldSocket::HandlePing(WorldPacket &recvPacket)
+bool WorldSocket::HandlePing(WorldPacket& recvPacket)
 {
     uint32 ping;
     uint32 latency;

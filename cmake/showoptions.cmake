@@ -1,5 +1,6 @@
 # output generic information about the core
-message(STATUS "CMaNGOS-Core revision : ${GIT_REVISION}")
+message(STATUS "CMaNGOS-Core revision : ${REVISION_ID}")
+message(STATUS "Revision time stamp   : ${REVISION_DATE}")
 message(STATUS "Install server to     : ${CMAKE_INSTALL_PREFIX}")
 
 # Show infomation about the options selected during configuration
@@ -58,6 +59,18 @@ if(BUILD_EXTRACTORS)
   message(STATUS "Build extractors      : Yes")
 else()
   message(STATUS "Build extractors      : No  (default)")
+endif()
+
+if(BUILD_RECASTDEMOMOD)
+  message(STATUS "Build RecastDemoMod   : Yes")
+else()
+  message(STATUS "Build RecastDemoMod   : No  (default)")
+endif()
+
+if(BUILD_GIT_ID)
+  message(STATUS "Build git_id          : Yes")
+else()
+  message(STATUS "Build git_id          : No  (default)")
 endif()
 
 # if(SQL)

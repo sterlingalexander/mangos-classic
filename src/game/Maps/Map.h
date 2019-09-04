@@ -36,6 +36,8 @@
 #include "vmap/DynamicTree.h"
 
 #include <bitset>
+#include <functional>
+#include <list>
 
 struct CreatureInfo;
 class Creature;
@@ -52,6 +54,7 @@ class BattleGround;
 class GridMap;
 class GameObjectModel;
 class WeatherSystem;
+namespace MaNGOS { struct ObjectUpdater; }
 
 // GCC have alternative #pragma pack(N) syntax and old gcc version not support pack(push,N), also any gcc version not support it at some platform
 #if defined( __GNUC__ )
@@ -64,7 +67,7 @@ struct InstanceTemplate
 {
     uint32 map;                                             // instance map
     uint32 parent;                                          // non-continent parent instance (for instance with entrance in another instances)
-                                                            // or 0 (not related to continent 0 map id)
+    // or 0 (not related to continent 0 map id)
     uint32 levelMin;
     uint32 levelMax;
     uint32 maxPlayers;
@@ -98,7 +101,6 @@ class Map : public GridRefManager<NGridType>
 
     protected:
         Map(uint32 id, time_t, uint32 InstanceId);
-
     public:
         virtual ~Map();
 
@@ -111,26 +113,37 @@ class Map : public GridRefManager<NGridType>
             return false;
         }
 
+        virtual void Initialize(bool loadInstanceData = true);
+
         virtual bool Add(Player*);
         virtual void Remove(Player*, bool);
         template<class T> void Add(T*);
         template<class T> void Remove(T*, bool);
 
-        static void DeleteFromWorld(Player* player);        // player object will deleted at call
+        static void DeleteFromWorld(Player* pl);        // player object will deleted at call
 
+        void VisitNearbyCellsOf(WorldObject* obj, TypeContainerVisitor<MaNGOS::ObjectUpdater, GridTypeMapContainer> &gridVisitor, TypeContainerVisitor<MaNGOS::ObjectUpdater, WorldTypeMapContainer> &worldVisitor);
         virtual void Update(const uint32&);
 
         void MessageBroadcast(Player const*, WorldPacket const&, bool to_self);
         void MessageBroadcast(WorldObject const*, WorldPacket const&);
         void MessageDistBroadcast(Player const*, WorldPacket const&, float dist, bool to_self, bool own_team_only = false);
         void MessageDistBroadcast(WorldObject const*, WorldPacket const&, float dist);
+        void MessageMapBroadcast(WorldObject const* obj, WorldPacket const& msg);
+        void MessageMapBroadcastZone(WorldObject const* obj, WorldPacket const& msg, uint32 zoneId);
+        void MessageMapBroadcastArea(WorldObject const* obj, WorldPacket const& msg, uint32 areaId);
+
+        void ExecuteDistWorker(WorldObject const* obj, float dist, std::function<void(Player*)> const& worker);
+        void ExecuteMapWorker(std::function<void(Player*)> const& worker);
+        void ExecuteMapWorkerZone(uint32 zoneId, std::function<void(Player*)> const& worker);
+        void ExecuteMapWorkerArea(uint32 areaId, std::function<void(Player*)> const& worker);
 
         float GetVisibilityDistance() const { return m_VisibleDistance; }
         // function for setting up visibility distance for maps on per-type/per-Id basis
         virtual void InitVisibilityDistance();
 
-        void PlayerRelocation(Player*, float x, float y, float z, float angl);
-        void CreatureRelocation(Creature* creature, float x, float y, float z, float orientation);
+        void PlayerRelocation(Player*, float x, float y, float z, float orientation);
+        void CreatureRelocation(Creature* creature, float x, float y, float z, float ang);
 
         template<class T, class CONTAINER> void Visit(const Cell& cell, TypeContainerVisitor<T, CONTAINER>& visitor);
 
@@ -167,8 +180,6 @@ class Map : public GridRefManager<NGridType>
 
         bool CreatureRespawnRelocation(Creature* c);        // used only in CreatureRelocation and ObjectGridUnloader
 
-        bool CheckGridIntegrity(Creature* c, bool moved) const;
-
         uint32 GetInstanceId() const { return i_InstanceId; }
         virtual bool CanEnter(Player* player);
         const char* GetMapName() const;
@@ -176,6 +187,7 @@ class Map : public GridRefManager<NGridType>
         bool Instanceable() const { return i_mapEntry && i_mapEntry->Instanceable(); }
         bool IsDungeon() const { return i_mapEntry && i_mapEntry->IsDungeon(); }
         bool IsRaid() const { return i_mapEntry && i_mapEntry->IsRaid(); }
+        bool IsNoRaid() const { return i_mapEntry && i_mapEntry->IsNonRaidDungeon(); }
         bool IsBattleGround() const { return i_mapEntry && i_mapEntry->IsBattleGround(); }
         bool IsContinent() const { return i_mapEntry && i_mapEntry->IsContinent(); }
         bool IsMountAllowed() const;
@@ -185,7 +197,7 @@ class Map : public GridRefManager<NGridType>
 
         void AddObjectToRemoveList(WorldObject* obj);
 
-        void UpdateObjectVisibility(WorldObject* obj, Cell cell, CellPair cellpair);
+        void UpdateObjectVisibility(WorldObject* obj, Cell cell, const CellPair& cellpair);
 
         void resetMarkedCells() { marked_cells.reset(); }
         bool isCellMarked(uint32 pCellId) const { return marked_cells.test(pCellId); }
@@ -219,8 +231,14 @@ class Map : public GridRefManager<NGridType>
         // must called with RemoveFromWorld
         void RemoveFromActive(WorldObject* obj);
 
+        // Game Event notification system
+        void AddToOnEventNotified(WorldObject* obj);
+        void RemoveFromOnEventNotified(WorldObject* obj);
+        void OnEventHappened(uint16 event_id, bool activate, bool resume);
+
         Player* GetPlayer(ObjectGuid guid);
         Creature* GetCreature(ObjectGuid guid);
+        Creature* GetCreatureByEntry(uint32 entry);
         Pet* GetPet(ObjectGuid guid);
         Creature* GetAnyTypeCreature(ObjectGuid guid);      // normal creature or pet
         GameObject* GetGameObject(ObjectGuid guid);
@@ -231,6 +249,8 @@ class Map : public GridRefManager<NGridType>
 
         typedef TypeUnorderedMapContainer<AllMapStoredObjectTypes, ObjectGuid> MapStoredObjectTypesContainer;
         MapStoredObjectTypesContainer& GetObjectsStore() { return m_objectsStore; }
+        std::map<uint32, uint32>& GetTempCreatures() { return m_tempCreatures; }
+        std::map<uint32, uint32>& GetTempPets() { return m_tempPets; }
 
         void AddUpdateObject(Object* obj)
         {
@@ -252,14 +272,14 @@ class Map : public GridRefManager<NGridType>
         InstanceData* GetInstanceData() const { return i_data; }
         uint32 GetScriptId() const { return i_script_id; }
 
-        void MonsterYellToMap(ObjectGuid guid, int32 textId, Language language, Unit const* target) const;
-        void MonsterYellToMap(CreatureInfo const* cinfo, int32 textId, Language language, Unit const* target, uint32 senderLowGuid = 0) const;
+        void MonsterYellToMap(ObjectGuid guid, int32 textId, ChatMsg chatMsg, Language language, Unit const* target) const;
+        void MonsterYellToMap(CreatureInfo const* cinfo, int32 textId, ChatMsg chatMsg, Language language, Unit const* target, uint32 senderLowGuid = 0) const;
         void PlayDirectSoundToMap(uint32 soundId, uint32 zoneId = 0) const;
 
         // Dynamic VMaps
         float GetHeight(float x, float y, float z) const;
         bool GetHeightInRange(float x, float y, float& z, float maxSearchDist = 4.0f) const;
-        bool IsInLineOfSight(float x1, float y1, float z1, float x2, float y2, float z2) const;
+        bool IsInLineOfSight(float x1, float y1, float z1, float x2, float y2, float z2, bool ignoreM2Model) const;
         bool GetHitPosition(float srcX, float srcY, float srcZ, float& destX, float& destY, float& destZ, float modifyDist) const;
 
         // Object Model insertion/remove/test for dynamic vmaps use
@@ -289,7 +309,24 @@ class Map : public GridRefManager<NGridType>
         bool GetRandomPointInTheAir(float& x, float& y, float& z, float radius) const;
         bool GetRandomPointUnderWater(float& x, float& y, float& z, float radius, GridMapLiquidData& liquid_status) const;
 
-        TimePoint GetCurrentClockTime();
+        void AddMessage(const std::function<void(Map*)>& message);
+
+        uint32 SpawnedCountForEntry(uint32 entry);
+        void AddToSpawnCount(const ObjectGuid& guid);
+        void RemoveFromSpawnCount(const ObjectGuid& guid);
+
+        uint32 GetUpdateTimeMin() { return m_updateTimeMin; }
+        uint32 GetUpdateTimeMax() { return m_updateTimeMax; }
+        uint32 GetUpdateTimeAvg() { return uint32(m_updateTimeTotal / m_cycleCounter); }
+
+        uint32 GetCurrentMSTime() const;
+        TimePoint GetCurrentClockTime() const;
+        uint32 GetCurrentDiff() const;
+
+        void CreatePlayerOnClient(Player* player);
+
+        uint32 GetLoadedGridsCount();
+
     private:
         void LoadMapAndVMap(int gx, int gy);
 
@@ -300,7 +337,7 @@ class Map : public GridRefManager<NGridType>
         void SendInitTransports(Player* player) const;
         void SendRemoveTransports(Player* player) const;
 
-        bool CreatureCellRelocation(Creature* creature, const Cell& new_cell);
+        bool CreatureCellRelocation(Creature* c, const Cell& new_cell);
 
         bool loaded(const GridPair&) const;
         void EnsureGridCreated(const GridPair&);
@@ -336,10 +373,18 @@ class Map : public GridRefManager<NGridType>
         MapRefManager m_mapRefManager;
         MapRefManager::iterator m_mapRefIter;
 
-        typedef std::set<WorldObject*> ActiveNonPlayers;
+        typedef WorldObjectSet ActiveNonPlayers;
         ActiveNonPlayers m_activeNonPlayers;
         ActiveNonPlayers::iterator m_activeNonPlayersIter;
         MapStoredObjectTypesContainer m_objectsStore;
+        std::map<uint32, uint32> m_tempCreatures;
+        std::map<uint32, uint32> m_tempPets;
+
+        std::vector<std::function<void(Map*)>> m_messageVector;
+        std::mutex m_messageMutex;
+
+        WorldObjectSet m_onEventNotifiedObjects;
+        WorldObjectSet::iterator m_onEventNotifiedIter;
 
     private:
         time_t i_gridExpiry;
@@ -352,7 +397,7 @@ class Map : public GridRefManager<NGridType>
 
         std::bitset<TOTAL_NUMBER_OF_CELLS_PER_MAP* TOTAL_NUMBER_OF_CELLS_PER_MAP> marked_cells;
 
-        std::set<WorldObject*> i_objectsToRemove;
+        WorldObjectSet i_objectsToRemove;
 
         typedef std::multimap<time_t, ScriptAction> ScriptScheduleMap;
         ScriptScheduleMap m_scriptSchedule;
@@ -380,6 +425,14 @@ class Map : public GridRefManager<NGridType>
 
         // WeatherSystem
         WeatherSystem* m_weatherSystem;
+
+        std::unordered_map<uint32, std::set<ObjectGuid>> m_spawnedCount;
+
+        // Map update performance logging
+        std::atomic<uint32> m_cycleCounter;
+        std::atomic<uint32> m_updateTimeMin;
+        std::atomic<uint32> m_updateTimeMax;
+        std::atomic<uint64> m_updateTimeTotal;
 };
 
 class WorldMap : public Map
@@ -411,6 +464,8 @@ class DungeonMap : public Map
         void SetResetSchedule(bool on);
         uint32 GetMaxPlayers() const;
 
+        Team GetInstanceTeam() { return m_team; };
+
         // can't be nullptr for loaded map
         DungeonPersistentState* GetPersistanceState() const;
 
@@ -418,6 +473,7 @@ class DungeonMap : public Map
     private:
         bool m_resetAfterUnload;
         bool m_unloadWhenEmpty;
+        Team m_team;
 };
 
 class BattleGroundMap : public Map
@@ -428,6 +484,7 @@ class BattleGroundMap : public Map
         BattleGroundMap(uint32 id, time_t, uint32 InstanceId);
         ~BattleGroundMap();
 
+        virtual void Initialize(bool) override;
         void Update(const uint32&) override;
         bool Add(Player*) override;
         void Remove(Player*, bool) override;

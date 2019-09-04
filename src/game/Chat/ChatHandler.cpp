@@ -217,7 +217,11 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
         case CHAT_MSG_PARTY:
         {
             std::string msg;
-            recv_data >> msg;
+
+            if (lang == LANG_ADDON)
+                recv_data.read(msg , false);
+            else
+                recv_data >> msg;
 
             if (msg.empty())
                 break;
@@ -236,7 +240,7 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
             if (!group)
             {
                 group = _player->GetGroup();
-                if (!group || group->isBGGroup())
+                if (!group || group->isBattleGroup())
                     return;
             }
 
@@ -249,7 +253,11 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
         case CHAT_MSG_GUILD:
         {
             std::string msg;
-            recv_data >> msg;
+
+            if (lang == LANG_ADDON)
+                recv_data.read(msg , false);
+            else
+                recv_data >> msg;
 
             if (msg.empty())
                 break;
@@ -272,7 +280,11 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
         case CHAT_MSG_OFFICER:
         {
             std::string msg;
-            recv_data >> msg;
+
+            if (lang == LANG_ADDON)
+                recv_data.read(msg , false);
+            else
+                recv_data >> msg;
 
             if (msg.empty())
                 break;
@@ -295,7 +307,11 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
         case CHAT_MSG_RAID:
         {
             std::string msg;
-            recv_data >> msg;
+
+            if (lang == LANG_ADDON)
+                recv_data.read(msg , false);
+            else
+                recv_data >> msg;
 
             if (msg.empty())
                 break;
@@ -314,7 +330,7 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
             if (!group)
             {
                 group = GetPlayer()->GetGroup();
-                if (!group || group->isBGGroup() || !group->isRaidGroup())
+                if (!group || group->isBattleGroup() || !group->isRaidGroup())
                     return;
             }
 
@@ -344,7 +360,7 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
             if (!group)
             {
                 group = GetPlayer()->GetGroup();
-                if (!group || group->isBGGroup() || !group->isRaidGroup() || !group->IsLeader(_player->GetObjectGuid()))
+                if (!group || group->isBattleGroup() || !group->isRaidGroup() || !group->IsLeader(_player->GetObjectGuid()))
                     return;
             }
 
@@ -378,7 +394,11 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
         case CHAT_MSG_BATTLEGROUND:
         {
             std::string msg;
-            recv_data >> msg;
+
+            if (lang == LANG_ADDON)
+                recv_data.read(msg , false);
+            else
+                recv_data >> msg;
 
             if (!processChatmessageFurtherAfterSecurityChecks(msg, lang))
                 return;
@@ -388,7 +408,7 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
 
             // battleground raid is always in Player->GetGroup(), never in GetOriginalGroup()
             Group* group = GetPlayer()->GetGroup();
-            if (!group || !group->isBGGroup())
+            if (!group || !group->isBattleGroup())
                 return;
 
             WorldPacket data;
@@ -409,7 +429,7 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
 
             // battleground raid is always in Player->GetGroup(), never in GetOriginalGroup()
             Group* group = GetPlayer()->GetGroup();
-            if (!group || !group->isBGGroup() || !group->IsLeader(GetPlayer()->GetObjectGuid()))
+            if (!group || !group->isBattleGroup() || !group->IsLeader(GetPlayer()->GetObjectGuid()))
                 return;
 
             WorldPacket data;
@@ -492,7 +512,7 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
 
 void WorldSession::HandleEmoteOpcode(WorldPacket& recv_data)
 {
-    if (!GetPlayer()->isAlive() || GetPlayer()->hasUnitState(UNIT_STAT_DIED))
+    if (!GetPlayer()->isAlive() || GetPlayer()->IsFeigningDeath())
         return;
 
     uint32 emote;
@@ -567,7 +587,7 @@ void WorldSession::HandleTextEmoteOpcode(WorldPacket& recv_data)
         default:
         {
             // in feign death state allowed only text emotes.
-            if (GetPlayer()->hasUnitState(UNIT_STAT_DIED))
+            if (GetPlayer()->IsFeigningDeath())
                 break;
 
             GetPlayer()->HandleEmoteCommand(emote_id);

@@ -49,7 +49,7 @@ void Corpse::AddToWorld()
     if (!IsInWorld())
         sObjectAccessor.AddObject(this);
 
-    Object::AddToWorld();
+    WorldObject::AddToWorld();
 }
 
 void Corpse::RemoveFromWorld()
@@ -260,31 +260,14 @@ uint32 Corpse::getFaction() const
     return 0;
 }
 
-bool Corpse::isVisibleForInState(Player const* u, WorldObject const* viewPoint, bool inVisibleList) const
+bool Corpse::isVisibleForInState(Player const* u, WorldObject const* viewPoint, bool /*inVisibleList*/) const
 {
-    return IsInWorld() && u->IsInWorld() && IsWithinDistInMap(viewPoint, GetMap()->GetVisibilityDistance() + (inVisibleList ? World::GetVisibleObjectGreyDistance() : 0.0f), false);
-}
-
-bool Corpse::IsHostileTo(Unit const* unit) const
-{
-    if (Player* owner = sObjectMgr.GetPlayer(GetOwnerGuid()))
-        return owner->IsHostileTo(unit);
-    else
-        return false;
-}
-
-bool Corpse::IsFriendlyTo(Unit const* unit) const
-{
-    if (Player* owner = sObjectMgr.GetPlayer(GetOwnerGuid()))
-        return owner->IsFriendlyTo(unit);
-    else
-        return true;
+    return IsInWorld() && u->IsInWorld() && IsWithinDistInMap(viewPoint, GetMap()->GetVisibilityDistance(), false);
 }
 
 bool Corpse::IsExpired(time_t t) const
 {
     if (m_type == CORPSE_BONES)
         return m_time < t - 60 * MINUTE;
-    else
-        return m_time < t - 3 * DAY;
+    return m_time < t - 3 * DAY;
 }

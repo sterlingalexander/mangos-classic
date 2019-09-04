@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+#include "AI/ScriptDevAI/include/precompiled.h"/* ContentData
 mob_aquementas
 npc_oox17tn
 npc_stone_watcher_of_norgannon
@@ -128,7 +128,7 @@ struct mob_aquementasAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_mob_aquementas(Creature* pCreature)
+UnitAI* GetAI_mob_aquementas(Creature* pCreature)
 {
     return new mob_aquementasAI(pCreature);
 }
@@ -157,6 +157,8 @@ struct npc_oox17tnAI : public npc_escortAI
 {
     npc_oox17tnAI(Creature* pCreature) : npc_escortAI(pCreature) { Reset(); }
 
+    GuidList m_lSummonsList;
+
     void WaypointReached(uint32 i) override
     {
         Player* pPlayer = GetPlayerForEscort();
@@ -166,14 +168,14 @@ struct npc_oox17tnAI : public npc_escortAI
 
         switch (i)
         {
-                // 1. Ambush: 3 scorpions
+            // 1. Ambush: 3 scorpions
             case 22:
                 DoScriptText(SAY_OOX_AMBUSH, m_creature);
                 m_creature->SummonCreature(NPC_SCORPION, -8340.70f, -4448.17f, 9.17f, 3.10f, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 30000);
                 m_creature->SummonCreature(NPC_SCORPION, -8343.18f, -4444.35f, 9.44f, 2.35f, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 30000);
                 m_creature->SummonCreature(NPC_SCORPION, -8348.70f, -4457.80f, 9.58f, 2.02f, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 30000);
                 break;
-                // 2. Ambush: 2 Rogues & 1 Shadow Mage
+            // 2. Ambush: 2 Rogues & 1 Shadow Mage
             case 28:
                 DoScriptText(SAY_OOX_AMBUSH, m_creature);
 
@@ -187,12 +189,16 @@ struct npc_oox17tnAI : public npc_escortAI
             case 34:
                 DoScriptText(SAY_OOX_END, m_creature);
                 // Award quest credit
-                pPlayer->GroupEventHappens(QUEST_RESCUE_OOX_17TN, m_creature);
+                pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_RESCUE_OOX_17TN, m_creature);
                 break;
         }
     }
 
-    void Reset() override { }
+    void Reset() override
+    {
+        if (!HasEscortState(STATE_ESCORT_ESCORTING))
+            m_creature->SetStandState(UNIT_STAND_STATE_DEAD);
+    }
 
     void Aggro(Unit* /*who*/) override
     {
@@ -207,10 +213,22 @@ struct npc_oox17tnAI : public npc_escortAI
     void JustSummoned(Creature* summoned) override
     {
         summoned->AI()->AttackStart(m_creature);
+        m_lSummonsList.push_back(summoned->GetObjectGuid());
+    }
+
+    void JustDied(Unit* pKiller) override
+    {
+        for (GuidList::const_iterator itr = m_lSummonsList.begin(); itr != m_lSummonsList.end(); ++itr)
+        {
+            if (Creature* pSummoned = m_creature->GetMap()->GetCreature(*itr))
+                pSummoned->ForcedDespawn();
+        }
+
+        npc_escortAI::JustDied(pKiller);
     }
 };
 
-CreatureAI* GetAI_npc_oox17tn(Creature* pCreature)
+UnitAI* GetAI_npc_oox17tn(Creature* pCreature)
 {
     return new npc_oox17tnAI(pCreature);
 }
@@ -220,14 +238,9 @@ bool QuestAccept_npc_oox17tn(Player* pPlayer, Creature* pCreature, const Quest* 
     if (pQuest->GetQuestId() == QUEST_RESCUE_OOX_17TN)
     {
         DoScriptText(SAY_OOX_START, pCreature);
-
+        pCreature->SetActiveObjectState(true);
         pCreature->SetStandState(UNIT_STAND_STATE_STAND);
-
-        if (pPlayer->GetTeam() == ALLIANCE)
-            pCreature->SetFactionTemporary(FACTION_ESCORT_A_PASSIVE, TEMPFACTION_RESTORE_RESPAWN);
-
-        if (pPlayer->GetTeam() == HORDE)
-            pCreature->SetFactionTemporary(FACTION_ESCORT_H_PASSIVE, TEMPFACTION_RESTORE_RESPAWN);
+        pCreature->SetFactionTemporary(FACTION_ESCORT_N_FRIEND_ACTIVE, TEMPFACTION_RESTORE_RESPAWN | TEMPFACTION_TOGGLE_IMMUNE_TO_NPC);
 
         if (npc_oox17tnAI* pEscortAI = dynamic_cast<npc_oox17tnAI*>(pCreature->AI()))
             pEscortAI->Start(false, pPlayer, pQuest);
@@ -344,7 +357,7 @@ struct npc_toogaAI : public FollowerAI
                 if (Player* pPlayer = GetLeaderForFollower())
                 {
                     if (pPlayer->GetQuestStatus(QUEST_TOOGA) == QUEST_STATUS_INCOMPLETE)
-                        pPlayer->GroupEventHappens(QUEST_TOOGA, m_creature);
+                        pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_TOOGA, m_creature);
                 }
 
                 pTorta = pWho;
@@ -434,7 +447,7 @@ struct npc_toogaAI : public FollowerAI
     }
 };
 
-CreatureAI* GetAI_npc_tooga(Creature* pCreature)
+UnitAI* GetAI_npc_tooga(Creature* pCreature)
 {
     return new npc_toogaAI(pCreature);
 }
@@ -452,9 +465,7 @@ bool QuestAccept_npc_tooga(Player* pPlayer, Creature* pCreature, const Quest* pQ
 
 void AddSC_tanaris()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "mob_aquementas";
     pNewScript->GetAI = &GetAI_mob_aquementas;
     pNewScript->RegisterSelf();

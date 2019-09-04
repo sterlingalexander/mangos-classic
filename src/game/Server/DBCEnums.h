@@ -32,6 +32,23 @@
 // also see MAX_LEVEL and GT_MAX_LEVEL define
 #define STRONG_MAX_LEVEL 255
 
+#pragma pack(push, 1)
+
+struct DBCPosition2D
+{
+    float X;
+    float Y;
+};
+
+struct DBCPosition3D
+{
+    float X;
+    float Y;
+    float Z;
+};
+
+#pragma pack(pop)
+
 enum AreaTeams
 {
     AREATEAM_NONE  = 0,
@@ -65,7 +82,7 @@ enum FactionGroupMask
     FACTION_GROUP_MASK_ALLIANCE = 2,                              // player or creature from alliance team
     FACTION_GROUP_MASK_HORDE    = 4,                              // player or creature from horde team
     FACTION_GROUP_MASK_MONSTER  = 8                               // aggressive creature from monster team
-                                                                  // if none flags set then non-aggressive creature
+                                  // if none flags set then non-aggressive creature
 };
 
 enum MapTypes
@@ -82,9 +99,20 @@ enum AbilytyLearnType
     ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL  = 2
 };
 
-enum AbilitySkillFlags
+enum SkillRaceClassInfoFlags
 {
-    ABILITY_SKILL_NONTRAINABLE = 0x100
+    SKILL_FLAG_NONE                     = 0x000,
+    SKILL_FLAG_UNK0                     = 0x001,
+    SKILL_FLAG_DISPLAY_SILENCED         = 0x002,    // Clientside: no skillup messages
+    SKILL_FLAG_UNK2                     = 0x004,
+    SKILL_FLAG_UNK3                     = 0x008,
+    SKILL_FLAG_MAXIMIZED                = 0x010,    // Always at max value
+    SKILL_FLAG_CAN_UNLEARN              = 0x020,
+    SKILL_FLAG_UNK6                     = 0x040,
+    SKILL_FLAG_DISPLAY_SORTED           = 0x080,    // Clientside: affects spellbook sorting for dependent spells
+    SKILL_FLAG_NOT_TRAINABLE            = 0x100,
+    SKILL_FLAG_UNK9                     = 0x200,
+    SKILL_FLAG_DISPLAY_AS_MONO          = 0x400     // Clientside: appear as greyed out bar (1/1)
 };
 
 enum ItemEnchantmentType
@@ -98,34 +126,11 @@ enum ItemEnchantmentType
     ITEM_ENCHANTMENT_TYPE_TOTEM            = 6
 };
 
-// SpellEntry::Targets
-enum SpellCastTargetFlags
-{
-    TARGET_FLAG_SELF            = 0x00000000,
-    TARGET_FLAG_UNUSED1         = 0x00000001,               // not used in any spells (can be set dynamically)
-    TARGET_FLAG_UNIT            = 0x00000002,               // pguid
-    TARGET_FLAG_UNUSED2         = 0x00000004,               // not used in any spells (can be set dynamically)
-    TARGET_FLAG_UNUSED3         = 0x00000008,               // not used in any spells (can be set dynamically)
-    TARGET_FLAG_ITEM            = 0x00000010,               // pguid
-    TARGET_FLAG_SOURCE_LOCATION = 0x00000020,               // 3 float
-    TARGET_FLAG_DEST_LOCATION   = 0x00000040,               // 3 float
-    TARGET_FLAG_OBJECT_UNK      = 0x00000080,               // used in 7 spells only
-    TARGET_FLAG_UNIT_UNK        = 0x00000100,               // looks like self target (389 spells)
-    TARGET_FLAG_PVP_CORPSE      = 0x00000200,               // pguid
-    TARGET_FLAG_UNIT_CORPSE     = 0x00000400,               // 10 spells (gathering professions)
-    TARGET_FLAG_OBJECT          = 0x00000800,               // pguid, 0 spells
-    TARGET_FLAG_TRADE_ITEM      = 0x00001000,               // pguid, 0 spells
-    TARGET_FLAG_STRING          = 0x00002000,               // string, 0 spells
-    TARGET_FLAG_GAMEOBJECT_ITEM = 0x00004000,               // 199 spells, opening object/lock
-    TARGET_FLAG_CORPSE_ALLY     = 0x00008000,               // pguid, resurrection spells
-    TARGET_FLAG_UNK2            = 0x00010000,               // pguid, not used in any spells (can be set dynamically)
-};
-
 enum SpellEffectIndex
 {
-    EFFECT_INDEX_0     = 0,
-    EFFECT_INDEX_1     = 1,
-    EFFECT_INDEX_2     = 2
+    EFFECT_INDEX_0 = 0,
+    EFFECT_INDEX_1 = 1,
+    EFFECT_INDEX_2 = 2
 };
 
 #define MAX_EFFECT_INDEX 3

@@ -27,6 +27,8 @@
 #include "Entities/Unit.h"
 #include "Entities/Player.h"
 #include "Server/SQLStorages.h"
+#include "Spells/SpellEffectDefines.h"
+#include "Spells/SpellMgr.h"
 
 class WorldSession;
 class WorldPacket;
@@ -53,13 +55,17 @@ enum SpellCastFlags
 
 enum SpellNotifyPushType
 {
-    PUSH_IN_FRONT,
-    PUSH_IN_FRONT_90,
-    PUSH_IN_FRONT_15,
-    PUSH_IN_BACK,
+    PUSH_CONE,
     PUSH_SELF_CENTER,
+    PUSH_SRC_CENTER,
     PUSH_DEST_CENTER,
     PUSH_TARGET_CENTER
+};
+
+enum CheckException
+{
+    EXCEPTION_NONE,
+    EXCEPTION_MAGNET,
 };
 
 bool IsQuestTameSpell(uint32 spellId);
@@ -126,6 +132,7 @@ class SpellCastTargets
         void setDestination(float x, float y, float z);
         void setSource(float x, float y, float z);
         void getDestination(float& x, float& y, float& z) const { x = m_destX; y = m_destY; z = m_destZ; }
+        void getDestination(WorldLocation& loc) { loc.coord_x = m_destX; loc.coord_y = m_destY; loc.coord_z = m_destZ; }
         void getSource(float& x, float& y, float& z) const { x = m_srcX; y = m_srcY, z = m_srcZ; }
 
         void setGOTarget(GameObject* target);
@@ -134,6 +141,7 @@ class SpellCastTargets
 
         void setCorpseTarget(Corpse* corpse);
         ObjectGuid getCorpseTargetGuid() const { return m_CorpseTargetGUID; }
+        Corpse* getCorpseTarget() const { return m_CorpseTarget; }
 
         void setItemTarget(Item* item);
         ObjectGuid getItemTargetGuid() const { return m_itemTargetGUID; }
@@ -166,6 +174,7 @@ class SpellCastTargets
         Unit* m_unitTarget;
         GameObject* m_GOTarget;
         Item* m_itemTarget;
+        Corpse* m_CorpseTarget;
 
         // object GUID/etc, can be used always
         ObjectGuid m_unitTargetGUID;
@@ -189,21 +198,20 @@ inline ByteBuffer& operator>> (ByteBuffer& buf, SpellCastTargetsReader const& ta
 
 enum SpellState
 {
-    SPELL_STATE_CREATED   = 0,                              // just created
-    SPELL_STATE_STARTING  = 1,                              // doing initial check
-    SPELL_STATE_PREPARING = 2,                              // cast time delay period, non channeled spell
-    SPELL_STATE_CASTING   = 3,                              // channeled time period spell casting state
-    SPELL_STATE_FINISHED  = 4,                              // cast finished to success or fail
-    SPELL_STATE_DELAYED   = 5                               // spell casted but need time to hit target(s)
+    SPELL_STATE_CREATED    = 0,                             // just created
+    SPELL_STATE_TARGETING  = 1,                             // doing initial check
+    SPELL_STATE_CASTING    = 2,                             // cast time delay period, non channeled spell
+    SPELL_STATE_DELAYED    = 3,                             // spell is delayed (cast time pushed back) TODO: need to be implemented properly
+    SPELL_STATE_TRAVELING  = 4,                             // spell casted but need time to hit target(s)
+    SPELL_STATE_LANDING    = 5,                             // processing the effects
+    SPELL_STATE_CHANNELING = 6,                             // channeled time period spell casting state
+    SPELL_STATE_FINISHED   = 7,                             // cast finished to success or fail
 };
 
 enum SpellTargets
 {
-    SPELL_TARGETS_HOSTILE,
-    SPELL_TARGETS_NOT_FRIENDLY,
-    SPELL_TARGETS_NOT_HOSTILE,
-    SPELL_TARGETS_FRIENDLY,
-    SPELL_TARGETS_AOE_DAMAGE,
+    SPELL_TARGETS_ASSISTABLE,
+    SPELL_TARGETS_AOE_ATTACKABLE,
     SPELL_TARGETS_ALL
 };
 
@@ -212,52 +220,52 @@ typedef std::multimap<uint64, uint64> SpellTargetTimeMap;
 // SpellLog class to manage spells logs that have to be sent to clients
 class SpellLog
 {
-public:
-    SpellLog(Spell* spell) :
-        m_spell(spell), m_spellLogDataEffectsCounter(0), m_spellLogDataEffectsCounterPos(0),
-        m_spellLogDataTargetsCounter(0), m_spellLogDataTargetsCounterPos(0), m_currentEffect(TOTAL_SPELL_EFFECTS) {}
-    SpellLog() = delete;
-    SpellLog(const SpellLog&) = delete;
+    public:
+        SpellLog(Spell* spell) :
+            m_spell(spell), m_spellLogDataEffectsCounterPos(0), m_spellLogDataEffectsCounter(0),
+            m_spellLogDataTargetsCounterPos(0), m_spellLogDataTargetsCounter(0), m_currentEffect(MAX_SPELL_EFFECTS) {}
+        SpellLog() = delete;
+        SpellLog(const SpellLog&) = delete;
 
-    void Initialize();
+        void Initialize();
 
-    // Variadic template to add log data (warnings, devs should respect the correct packet structure)
-    template<typename... Args>
-    void AddLog(uint32 spellEffect, Args... args)
-    {
-        SetCurrentEffect(spellEffect);
-        AddLogData(args...);
-        ++m_spellLogDataEffectsCounter;
-    }
+        // Variadic template to add log data (warnings, devs should respect the correct packet structure)
+        template<typename... Args>
+        void AddLog(uint32 spellEffect, Args... args)
+        {
+            SetCurrentEffect(spellEffect);
+            AddLogData(args...);
+            ++m_spellLogDataEffectsCounter;
+        }
 
-    // Send collected logs
-    void SendToSet();
+        // Send collected logs
+        void SendToSet();
 
-private:
-    // Finalize previous log if need by setting total targets amount
-    void FinalizePrevious();
+    private:
+        // Finalize previous log if need by setting total targets amount
+        void FinalizePrevious();
 
-    // Handle multi targets cases by adjusting targets counter if need
-    void SetCurrentEffect(uint32 effect);
+        // Handle multi targets cases by adjusting targets counter if need
+        void SetCurrentEffect(uint32 effect);
 
-    // Variadic template to method to handle multi arguments passed with different types
-    template<typename T>
-    void AddLogData(T const& data) { m_spellLogData << data; }
+        // Variadic template to method to handle multi arguments passed with different types
+        template<typename T>
+        void AddLogData(T const& data) { m_spellLogData << data; }
 
-    template<typename T, typename... Args>
-    void AddLogData(T const& data, Args const&... args)
-    {
-        AddLogData(data);
-        AddLogData(args...);
-    }
+        template<typename T, typename... Args>
+        void AddLogData(T const& data, Args const& ... args)
+        {
+            AddLogData(data);
+            AddLogData(args...);
+        }
 
-    Spell* m_spell;
-    WorldPacket m_spellLogData;
-    size_t m_spellLogDataEffectsCounterPos;
-    uint32 m_spellLogDataEffectsCounter;
-    size_t m_spellLogDataTargetsCounterPos;
-    uint32 m_spellLogDataTargetsCounter;
-    uint32 m_currentEffect;
+        Spell* m_spell;
+        WorldPacket m_spellLogData;
+        size_t m_spellLogDataEffectsCounterPos;
+        uint32 m_spellLogDataEffectsCounter;
+        size_t m_spellLogDataTargetsCounterPos;
+        uint32 m_spellLogDataTargetsCounter;
+        uint32 m_currentEffect;
 };
 
 class Spell
@@ -305,6 +313,7 @@ class Spell
         void EffectTeleUnitsFaceCaster(SpellEffectIndex eff_idx);
         void EffectLearnSkill(SpellEffectIndex eff_idx);
         void EffectAddHonor(SpellEffectIndex eff_idx);
+        void EffectSpawn(SpellEffectIndex eff_idx);
         void EffectTradeSkill(SpellEffectIndex eff_idx);
         void EffectEnchantItemPerm(SpellEffectIndex eff_idx);
         void EffectEnchantItemTmp(SpellEffectIndex eff_idx);
@@ -385,7 +394,7 @@ class Spell
         void _handle_finish_phase();
 
         SpellCastResult CheckItems();
-        SpellCastResult CheckRange(bool strict) const;
+        SpellCastResult CheckRange(bool strict);
         SpellCastResult CheckPower();
         SpellCastResult CheckCasterAuras() const;
 
@@ -398,6 +407,7 @@ class Spell
         uint32 getState() const { return m_spellState; }
         void setState(uint32 state) { m_spellState = state; }
 
+        uint32 GetUsableHealthStoneItemType(Unit* unitTarget);
         bool DoCreateItem(SpellEffectIndex eff_idx, uint32 itemtype);
 
         void WriteSpellGoTargets(WorldPacket& data);
@@ -405,18 +415,22 @@ class Spell
 
         template<typename T> WorldObject* FindCorpseUsing();
 
-        bool CheckTarget(Unit* target, SpellEffectIndex eff) const;
+        bool CheckTargetGOScript(GameObject* target, SpellEffectIndex eff) const;
+        bool CheckTargetScript(Unit* target, SpellEffectIndex eff) const;
+        bool CheckTarget(Unit* target, SpellEffectIndex eff, bool targetB, CheckException exception = EXCEPTION_NONE) const;
         bool CanAutoCast(Unit* target);
 
-        static void SendCastResult(Player* caster, SpellEntry const* spellInfo, SpellCastResult result);
+        static void SendCastResult(Player const* caster, SpellEntry const* spellInfo, SpellCastResult result, bool isPetCastResult = false);
         void SendCastResult(SpellCastResult result) const;
         void SendSpellStart() const;
         void SendSpellGo();
         void SendSpellCooldown();
-        void SendInterrupted(uint8 result) const;
-        void SendChannelUpdate(uint32 time, bool properEnding = false) const;
+        void SendInterrupted(SpellCastResult result) const;
+        void SendChannelUpdate(uint32 time, uint32 lastTick = 0) const;
         void SendChannelStart(uint32 duration);
         void SendResurrectRequest(Player* target) const;
+
+        void StopCast(SpellCastResult castResult);
 
         void HandleEffects(Unit* pUnitTarget, Item* pItemTarget, GameObject* pGOTarget, SpellEffectIndex i, float DamageMultiplier = 1.0);
         void HandleThreatSpells();
@@ -430,12 +444,17 @@ class Spell
         Item* m_CastItem;
 
         SpellCastTargets m_targets;
-        
+
         // Trigger flag system
+        bool m_IsTriggeredSpell;
         bool m_ignoreHitResult;
+        bool m_ignoreCastTime;
         bool m_ignoreUnselectableTarget;
         bool m_ignoreUnattackableTarget;
         bool m_triggerAutorepeat;
+        bool m_doNotProc;
+        bool m_petCast;
+        bool m_notifyAI;
 
         int32 GetCastTime() const { return m_casttime; }
         uint32 GetCastedTime() const { return m_timer; }
@@ -451,18 +470,21 @@ class Spell
             return  m_spellInfo->HasAttribute(SPELL_ATTR_RANGED);
         }
         bool IsChannelActive() const { return m_caster->GetUInt32Value(UNIT_CHANNEL_SPELL) != 0; }
-        bool IsMeleeAttackResetSpell() const { return !m_IsTriggeredSpell && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_AUTOATTACK);  }
-        bool IsRangedAttackResetSpell() const { return !m_IsTriggeredSpell && IsRangedSpell() && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_AUTOATTACK); }
+        bool IsMeleeAttackResetSpell() const { return !m_IsTriggeredSpell && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT);  }
+        bool IsRangedAttackResetSpell() const { return !m_IsTriggeredSpell && IsRangedSpell() && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT); }
+        bool IsEffectWithImplementedMultiplier(uint32 effectId) const;
 
         bool IsDeletable() const { return !m_referencedFromCurrentSpell && !m_executedCurrently; }
         void SetReferencedFromCurrent(bool yes) { m_referencedFromCurrentSpell = yes; }
         void SetExecutedCurrently(bool yes) { m_executedCurrently = yes; }
+        bool IsExecutedCurrently() const { return m_executedCurrently; }
         uint64 GetDelayStart() const { return m_delayStart; }
         void SetDelayStart(uint64 m_time) { m_delayStart = m_time; }
         uint64 GetDelayMoment() const { return m_delayMoment; }
 
         bool IsNeedSendToClient() const;                    // use for hide spell cast for client in case when cast not have client side affect (animation or log entries)
-        bool IsTriggeredSpellWithRedundentCastTime() const; // use for ignore some spell data for triggered spells like cast time, some triggered spells have redundent copy data from main spell for client use purpose
+        bool IsTriggeredSpellWithRedundantCastTime() const; // use for ignore some spell data for triggered spells like cast time, some triggered spells have redundent copy data from main spell for client use purpose
+        bool IsTriggeredByAura() const { return m_triggeredByAuraSpell != nullptr; }
 
         CurrentSpellTypes GetCurrentContainer() const;
 
@@ -477,6 +499,8 @@ class Spell
         WorldObject* GetCastingObject() const;
 
         uint32 GetPowerCost() const { return m_powerCost; }
+        // channels are generally instant - until more research provided all need to have speed 0
+        float GetSpellSpeed() const;
 
         void UpdatePointers();                              // must be used at call Spell code after time delay (non triggered spell cast/update spell call/etc)
 
@@ -492,9 +516,15 @@ class Spell
         void CleanupTargetList();
         void ClearCastItem();
 
-        void ProcSpellAuraTriggers();
+        bool CanBeInterrupted() const { return m_spellState <= SPELL_STATE_DELAYED || m_spellState == SPELL_STATE_CHANNELING; }
 
-        typedef std::list<Unit*> UnitList;
+        uint64 GetScriptValue() const { return m_scriptValue; }
+        void SetScriptValue(uint64 value) { m_scriptValue = value; }
+
+        // Spell Script hooks
+        void OnSuccessfulSpellStart();
+        void OnSuccessfulSpellFinish();
+        SpellCastResult OnCheckCast(bool strict);
 
     protected:
         void SendLoot(ObjectGuid guid, LootType loottype, LockType lockType);
@@ -503,6 +533,9 @@ class Spell
 
         SpellCastResult PreCastCheck(Aura* triggeredByAura = nullptr);
         void Prepare();
+
+        // Spell_C_GetMinMaxRange client equivalent - do not change
+        std::pair<float, float> GetMinMaxRange(bool strict);
 
         Unit* m_caster;
 
@@ -518,6 +551,7 @@ class Spell
         int32 m_duration;
         bool m_reflectable;                                  // can reflect this spell?
         bool m_autoRepeat;
+        float m_maxRange;                                   // For channeled spell check
 
         uint8 m_delayAtDamageCount;
         int32 GetNextDelayAtDamageMsTime() { return m_delayAtDamageCount < 5 ? 1000 - (m_delayAtDamageCount++) * 200 : 200; }
@@ -525,7 +559,6 @@ class Spell
         // Delayed spells system
         uint64 m_delayStart;                                // time of spell delay start, filled by event handler, zero = just started
         uint64 m_delayMoment;                               // moment of next delay call, used internally
-        bool m_immediateHandled;                            // were immediate actions handled? (used by delayed spells only)
 
         // These vars are used in both delayed spell system and modified immediate spell system
         bool m_referencedFromCurrentSpell;                  // mark as references to prevent deleted and access by dead pointers
@@ -549,8 +582,10 @@ class Spell
         GameObject* focusObject;
 
         // Damage and healing in effects need just calculate
-        int32 m_damage;                                     // Damage   in effects count here
+        int32 m_damage;                                     // Damage in effects count here
+        int32 m_damagePerEffect[MAX_EFFECT_INDEX];
         int32 m_healing;                                    // Healing in effects count here
+        int32 m_healingPerEffect[MAX_EFFECT_INDEX];
         int32 m_healthLeech;                                // Health leech in effects for all targets count here
 
         //******************************************
@@ -558,23 +593,36 @@ class Spell
         //******************************************
         bool   m_canTrigger;                                // Can start trigger (m_IsTriggeredSpell can`t use for this)
         uint8  m_negativeEffectMask;                        // Use for avoid sent negative spell procs for additional positive effects only targets
-        uint32 m_procAttacker;                              // Attacker trigger flags
-        uint32 m_procVictim;                                // Victim   trigger flags
-        void   prepareDataForTriggerSystem();
+        void prepareDataForTriggerSystem();
+        void PrepareMasksForProcSystem(uint8 effectMask, uint32& procAttacker, uint32& procVictim, WorldObject* caster, WorldObject* target);
 
         //*****************************************
         // Spell target filling
         //*****************************************
+        struct TempTargetData
+        {
+            UnitList tmpUnitList[2];
+            GameObjectList tmpGOList[2];
+            std::list<Item*> tempItemList;
+        };
+        struct TempTargetingData
+        {
+            TempTargetData data[MAX_EFFECT_INDEX];
+            bool magnet;
+        };
         void FillTargetMap();
-        void SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList& targetUnitMap);
-        static void CheckSpellScriptTargets(SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry> &bounds, UnitList &tempTargetUnitMap, UnitList &targetUnitMap, SpellEffectIndex effIndex);
+        void SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, bool targetB, TempTargetingData& targetingData);
+        bool CheckAndAddMagnetTarget(Unit* unitTarget, SpellEffectIndex effIndex, bool targetB, TempTargetingData& data);
+        static void CheckSpellScriptTargets(SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry>& bounds, UnitList& tempTargetUnitMap, UnitList& targetUnitMap, SpellEffectIndex effIndex);
+        void FilterTargetMap(UnitList& filterUnitList, SpellEffectIndex effIndex);
 
-        void FillAreaTargets(UnitList& targetUnitMap, float radius, SpellNotifyPushType pushType, SpellTargets spellTargets, WorldObject* originalCaster = nullptr);
+        void FillAreaTargets(UnitList& targetUnitMap, float radius, float cone, SpellNotifyPushType pushType, SpellTargets spellTargets, WorldObject* originalCaster = nullptr);
         void FillRaidOrPartyTargets(UnitList& targetUnitMap, Unit* member, float radius, bool raid, bool withPets, bool withcaster) const;
 
         // Returns a target that was filled by SPELL_SCRIPT_TARGET (or selected victim) Can return nullptr
         Unit* GetPrefilledUnitTargetOrUnitTarget(SpellEffectIndex effIndex) const;
-        void GetSpellRangeAndRadius(SpellEffectIndex effIndex, float& radius, uint32& EffectChainTarget) const;
+        void GetSpellRangeAndRadius(SpellEffectIndex effIndex, float& radius, bool targetB, uint32& EffectChainTarget) const;
+        float GetCone();
 
         //*****************************************
         // Spell target subsystem
@@ -588,8 +636,10 @@ class Spell
             uint32 damage;
             SpellMissInfo missCondition: 8;
             SpellMissInfo reflectResult: 8;
-            uint8  effectMask: 8;
+            uint8  effectHitMask : 8; // Used for all effects which actually hit a target
+            uint8  effectMask: 8; // Used for all effects a certain target was evaluated for
             bool   processed: 1;
+            bool   magnet: 1;
         };
         uint8 m_needAliveTargetMask;                        // Mask req. alive targets
 
@@ -603,8 +653,16 @@ class Spell
 
         struct ItemTargetInfo
         {
-            Item*  item;
+            Item* item;
             uint8 effectMask;
+        };
+
+        struct DestTargetInfo
+        {
+            uint32 effectMask;
+            uint64 timeDelay;
+            bool processed;
+            DestTargetInfo() : effectMask(0), timeDelay(0), processed(false) {}
         };
 
         typedef std::list<TargetInfo>     TargetList;
@@ -614,21 +672,26 @@ class Spell
         TargetList     m_UniqueTargetInfo;
         GOTargetList   m_UniqueGOTargetInfo;
         ItemTargetList m_UniqueItemInfo;
+        uint32         m_targetlessMask;
+        DestTargetInfo m_destTargetInfo;
 
-        void AddUnitTarget(Unit* target, SpellEffectIndex effIndex);
-        void AddUnitTarget(ObjectGuid unitGuid, SpellEffectIndex effIndex);
-        void AddGOTarget(GameObject* target, SpellEffectIndex effIndex);
-        void AddGOTarget(ObjectGuid goGuid, SpellEffectIndex effIndex);
-        void AddItemTarget(Item* target, SpellEffectIndex effIndex);
+        void AddUnitTarget(Unit* target, uint8 effectMask, CheckException exception = EXCEPTION_NONE);
+        void AddGOTarget(GameObject* target, uint8 effectMask);
+        void AddItemTarget(Item* item, uint8 effectMask);
+        void AddDestExecution(SpellEffectIndex effIndex);
         void DoAllEffectOnTarget(TargetInfo* target);
         void HandleDelayedSpellLaunch(TargetInfo* target);
         void InitializeDamageMultipliers();
         void ResetEffectDamageAndHeal();
         void DoSpellHitOnUnit(Unit* unit, uint32 effectMask, bool isReflected = false);
+        void DoAllTargetlessEffects(bool dest);
         void DoAllEffectOnTarget(GOTargetInfo* target);
         void DoAllEffectOnTarget(ItemTargetInfo* target);
         bool IsAliveUnitPresentInTargetList();
-        SpellCastResult CanOpenLock(SpellEffectIndex effIndex, uint32 lockid, SkillType& skillid, int32& reqSkillValue, int32& skillValue);
+        bool IsValidDeadOrAliveTarget(Unit const* unit) const;
+        SpellCastResult CanOpenLock(SpellEffectIndex effIndex, uint32 lockid, SkillType& skillId, int32& reqSkillValue, int32& skillValue);
+        void ProcSpellAuraTriggers();
+        bool CanExecuteTriggersOnHit(uint8 effMask, SpellEntry const* triggeredByAura) const;
         // -------------------------------------------
 
         // List For Triggered Spells
@@ -649,7 +712,7 @@ class Spell
         float m_castPositionY;
         float m_castPositionZ;
         float m_castOrientation;
-        bool m_IsTriggeredSpell;
+
         uint32 m_affectedTargetCount;
 
         // if need this can be replaced by Aura copy
@@ -673,13 +736,13 @@ namespace MaNGOS
 {
     struct SpellNotifierPlayer              // Currently unused. When put to use this one requires handling for source-location (smilar to below)
     {
-        Spell::UnitList& i_data;
+        UnitList& i_data;
         Spell& i_spell;
         const uint32& i_index;
         float i_radius;
         WorldObject* i_originalCaster;
 
-        SpellNotifierPlayer(Spell& spell, Spell::UnitList& data, const uint32& i, float radius)
+        SpellNotifierPlayer(Spell& spell, UnitList& data, const uint32& i, float radius)
             : i_data(data), i_spell(spell), i_index(i), i_radius(radius)
         {
             i_originalCaster = i_spell.GetAffectiveCasterObject();
@@ -690,13 +753,13 @@ namespace MaNGOS
             if (!i_originalCaster)
                 return;
 
-            for (PlayerMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
+            for (auto& itr : m)
             {
-                Player* pPlayer = itr->getSource();
+                Player* pPlayer = itr.getSource();
                 if (!pPlayer->isAlive() || pPlayer->IsTaxiFlying())
                     continue;
 
-                if (i_originalCaster->IsFriendlyTo(pPlayer))
+                if (!i_originalCaster->CanAttackSpell(pPlayer, i_spell.m_spellInfo))
                     continue;
 
                 if (pPlayer->IsWithinDist3d(i_spell.m_targets.m_destX, i_spell.m_targets.m_destY, i_spell.m_targets.m_destZ, i_radius))
@@ -708,10 +771,11 @@ namespace MaNGOS
 
     struct SpellNotifierCreatureAndPlayer
     {
-        Spell::UnitList* i_data;
+        UnitList& i_data;
         Spell& i_spell;
         SpellNotifyPushType i_push_type;
         float i_radius;
+        float i_cone;
         SpellTargets i_TargetType;
         WorldObject* i_originalCaster;
         WorldObject* i_castingObject;
@@ -723,9 +787,9 @@ namespace MaNGOS
         float GetCenterX() const { return i_centerX; }
         float GetCenterY() const { return i_centerY; }
 
-        SpellNotifierCreatureAndPlayer(Spell& spell, Spell::UnitList& data, float radius, SpellNotifyPushType type,
-                                       SpellTargets TargetType = SPELL_TARGETS_NOT_FRIENDLY, WorldObject* originalCaster = nullptr)
-            : i_data(&data), i_spell(spell), i_push_type(type), i_radius(radius), i_TargetType(TargetType),
+        SpellNotifierCreatureAndPlayer(Spell& spell, UnitList& data, float radius, float cone, SpellNotifyPushType type,
+                                       SpellTargets TargetType = SPELL_TARGETS_AOE_ATTACKABLE, WorldObject* originalCaster = nullptr)
+            : i_data(data), i_spell(spell), i_push_type(type), i_radius(radius), i_cone(cone), i_TargetType(TargetType),
               i_originalCaster(originalCaster), i_castingObject(i_spell.GetCastingObject())
         {
             if (!i_originalCaster)
@@ -734,10 +798,7 @@ namespace MaNGOS
 
             switch (i_push_type)
             {
-                case PUSH_IN_FRONT:
-                case PUSH_IN_FRONT_90:
-                case PUSH_IN_FRONT_15:
-                case PUSH_IN_BACK:
+                case PUSH_CONE:
                 case PUSH_SELF_CENTER:
                     if (i_castingObject)
                     {
@@ -745,10 +806,12 @@ namespace MaNGOS
                         i_centerY = i_castingObject->GetPositionY();
                     }
                     break;
-                case PUSH_DEST_CENTER:
+                case PUSH_SRC_CENTER:
                     if (i_spell.m_targets.m_targetMask & TARGET_FLAG_SOURCE_LOCATION)
                         i_spell.m_targets.getSource(i_centerX, i_centerY, i_centerZ);
-                    else
+                    break;
+                case PUSH_DEST_CENTER:
+                    if (i_spell.m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION)
                         i_spell.m_targets.getDestination(i_centerX, i_centerY, i_centerZ);
                     break;
                 case PUSH_TARGET_CENTER:
@@ -756,6 +819,7 @@ namespace MaNGOS
                     {
                         i_centerX = target->GetPositionX();
                         i_centerY = target->GetPositionY();
+                        i_centerZ = target->GetPositionZ();
                     }
                     break;
                 default:
@@ -765,8 +829,6 @@ namespace MaNGOS
 
         template<class T> inline void Visit(GridRefManager<T>&  m)
         {
-            MANGOS_ASSERT(i_data);
-
             if (!i_originalCaster || !i_castingObject)
                 return;
 
@@ -775,42 +837,25 @@ namespace MaNGOS
                 // there are still more spells which can be casted on dead, but
                 // they are no AOE and don't have such a nice SPELL_ATTR flag
                 // mostly phase check
-                if (!itr->getSource()->IsInMap(i_originalCaster))
+                if (!itr->getSource()->IsInMap(i_originalCaster) || itr->getSource()->IsTaxiFlying())
                     continue;
 
                 switch (i_TargetType)
                 {
-                    case SPELL_TARGETS_HOSTILE:
-                        if (!i_originalCaster->IsHostileTo(itr->getSource()))
+                    case SPELL_TARGETS_ASSISTABLE:
+                        if (itr->getSource()->GetTypeId() == TYPEID_UNIT && ((Creature*)itr->getSource())->IsTotem())
+                            continue;
+
+                        if (!i_originalCaster->CanAssistSpell(itr->getSource(), i_spell.m_spellInfo))
                             continue;
                         break;
-                    case SPELL_TARGETS_NOT_FRIENDLY:
-                        if (i_originalCaster->IsFriendlyTo(itr->getSource()))
-                            continue;
-                        break;
-                    case SPELL_TARGETS_NOT_HOSTILE:
-                        if (i_originalCaster->IsHostileTo(itr->getSource()))
-                            continue;
-                        break;
-                    case SPELL_TARGETS_FRIENDLY:
-                        if (!i_originalCaster->IsFriendlyTo(itr->getSource()))
-                            continue;
-                        break;
-                    case SPELL_TARGETS_AOE_DAMAGE:
+                    case SPELL_TARGETS_AOE_ATTACKABLE:
                     {
                         if (itr->getSource()->GetTypeId() == TYPEID_UNIT && ((Creature*)itr->getSource())->IsTotem())
                             continue;
 
-                        if (i_playerControlled)
-                        {
-                            if (i_originalCaster->IsFriendlyTo(itr->getSource()))
-                                continue;
-                        }
-                        else
-                        {
-                            if (!i_originalCaster->IsHostileTo(itr->getSource()))
-                                continue;
-                        }
+                        if (!i_originalCaster->CanAttackSpell(itr->getSource(), i_spell.m_spellInfo, true))
+                            continue;
                     }
                     break;
                     case SPELL_TARGETS_ALL:
@@ -821,33 +866,27 @@ namespace MaNGOS
                 // we don't need to check InMap here, it's already done some lines above
                 switch (i_push_type)
                 {
-                    case PUSH_IN_FRONT:
-                        if (i_castingObject->isInFront((Unit*)(itr->getSource()), i_radius, 2 * M_PI_F / 3))
-                            i_data->push_back(itr->getSource());
-                        break;
-                    case PUSH_IN_FRONT_90:
-                        if (i_castingObject->isInFront((Unit*)(itr->getSource()), i_radius, M_PI_F / 2))
-                            i_data->push_back(itr->getSource());
-                        break;
-                    case PUSH_IN_FRONT_15:
-                        if (i_castingObject->isInFront((Unit*)(itr->getSource()), i_radius, M_PI_F / 12))
-                            i_data->push_back(itr->getSource());
-                        break;
-                    case PUSH_IN_BACK:
-                        if (i_castingObject->isInBack((Unit*)(itr->getSource()), i_radius, 2 * M_PI_F / 3))
-                            i_data->push_back(itr->getSource());
+                    case PUSH_CONE:
+                        if (i_cone >= 0.f)
+                        {
+                            if (i_castingObject->isInFront((Unit*)(itr->getSource()), i_radius, i_cone))
+                                i_data.push_back(itr->getSource());
+                        }
+                        else
+                        {
+                            if (i_castingObject->isInBack((Unit*)(itr->getSource()), i_radius, -i_cone))
+                                i_data.push_back(itr->getSource());
+                        }
                         break;
                     case PUSH_SELF_CENTER:
-                        if (i_castingObject->IsWithinDist((Unit*)(itr->getSource()), i_radius))
-                            i_data->push_back(itr->getSource());
+                        if (itr->getSource()->GetDistance2d(i_centerX, i_centerY, DIST_CALC_COMBAT_REACH) <= i_radius)
+                            i_data.push_back(itr->getSource());
                         break;
+                    case PUSH_SRC_CENTER:
                     case PUSH_DEST_CENTER:
-                        if (itr->getSource()->IsWithinDist3d(i_centerX, i_centerY, i_centerZ, i_radius))
-                            i_data->push_back(itr->getSource());
-                        break;
                     case PUSH_TARGET_CENTER:
-                        if (i_spell.m_targets.getUnitTarget() && i_spell.m_targets.getUnitTarget()->IsWithinDist((Unit*)(itr->getSource()), i_radius))
-                            i_data->push_back(itr->getSource());
+                        if (itr->getSource()->GetDistance(i_centerX, i_centerY, i_centerZ, DIST_CALC_COMBAT_REACH) <= i_radius)
+                            i_data.push_back(itr->getSource());
                         break;
                 }
             }
@@ -880,6 +919,8 @@ class SpellEvent : public BasicEvent
         virtual bool Execute(uint64 e_time, uint32 p_time) override;
         virtual void Abort(uint64 e_time) override;
         virtual bool IsDeletable() const override;
+
+        Spell* GetSpell() const { return m_Spell; }
     protected:
         Spell* m_Spell;
 };

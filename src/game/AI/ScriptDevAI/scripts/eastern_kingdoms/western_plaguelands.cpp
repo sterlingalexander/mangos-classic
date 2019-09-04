@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+#include "AI/ScriptDevAI/include/precompiled.h"/* ContentData
 npc_the_scourge_cauldron
 npc_taelan_fordring
 npc_isillien
@@ -99,7 +99,7 @@ struct npc_the_scourge_cauldronAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_the_scourge_cauldron(Creature* pCreature)
+UnitAI* GetAI_npc_the_scourge_cauldron(Creature* pCreature)
 {
     return new npc_the_scourge_cauldronAI(pCreature);
 }
@@ -278,7 +278,6 @@ struct npc_taelan_fordringAI: public npc_escortAI, private DialogueHelper
         if (m_bTaelanDead)
         {
             m_creature->RemoveAllAurasOnEvade();
-            m_creature->DeleteThreatList();
             m_creature->CombatStop(true);
             m_creature->SetLootRecipient(nullptr);
 
@@ -314,7 +313,7 @@ struct npc_taelan_fordringAI: public npc_escortAI, private DialogueHelper
         }
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
     {
         if (eventType == AI_EVENT_START_ESCORT && pInvoker->GetTypeId() == TYPEID_PLAYER)
         {
@@ -403,11 +402,11 @@ struct npc_taelan_fordringAI: public npc_escortAI, private DialogueHelper
                 m_creature->SetStandState(UNIT_STAND_STATE_KNEEL);
                 m_creature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
 
-                std::list<Creature*> lCavaliersInRange;
+                CreatureList lCavaliersInRange;
                 GetCreatureListWithEntryInGrid(lCavaliersInRange, m_creature, NPC_SCARLET_CAVALIER, 10.0f);
 
                 uint8 uiIndex = 0;
-                for (std::list<Creature*>::const_iterator itr = lCavaliersInRange.begin(); itr != lCavaliersInRange.end(); ++itr)
+                for (CreatureList::const_iterator itr = lCavaliersInRange.begin(); itr != lCavaliersInRange.end(); ++itr)
                 {
                     m_lCavalierGuids.push_back((*itr)->GetObjectGuid());
                     (*itr)->SetFacingToObject(m_creature);
@@ -507,7 +506,7 @@ struct npc_taelan_fordringAI: public npc_escortAI, private DialogueHelper
                         pIsillien->AI()->AttackStart(pPlayer);
                 }
                 break;
-                // tirion event
+            // tirion event
             case SAY_TIRION_5:
                 if (Creature* pIsillien = m_creature->GetMap()->GetCreature(m_isillenGuid))
                 {
@@ -518,7 +517,7 @@ struct npc_taelan_fordringAI: public npc_escortAI, private DialogueHelper
                     }
                 }
                 break;
-                // epilog dialogue
+            // epilog dialogue
             case EMOTE_HOLD_TAELAN:
                 if (Creature* pTirion = m_creature->GetMap()->GetCreature(m_tirionGuid))
                     pTirion->SetStandState(UNIT_STAND_STATE_KNEEL);
@@ -532,7 +531,7 @@ struct npc_taelan_fordringAI: public npc_escortAI, private DialogueHelper
                 {
                     if (Player* pPlayer = GetPlayerForEscort())
                     {
-                        pPlayer->GroupEventHappens(QUEST_ID_IN_DREAMS, m_creature);
+                        pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ID_IN_DREAMS, m_creature);
                         pTirion->SetFacingToObject(pPlayer);
                     }
 
@@ -619,7 +618,7 @@ struct npc_taelan_fordringAI: public npc_escortAI, private DialogueHelper
     }
 };
 
-CreatureAI* GetAI_npc_taelan_fordring(Creature* pCreature)
+UnitAI* GetAI_npc_taelan_fordring(Creature* pCreature)
 {
     return new npc_taelan_fordringAI(pCreature);
 }
@@ -704,7 +703,6 @@ struct npc_isillienAI: public npc_escortAI
         if (m_bTaelanDead)
         {
             m_creature->RemoveAllAurasOnEvade();
-            m_creature->DeleteThreatList();
             m_creature->CombatStop(true);
             m_creature->SetLootRecipient(nullptr);
 
@@ -716,7 +714,7 @@ struct npc_isillienAI: public npc_escortAI
             npc_escortAI::EnterEvadeMode();
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* pSender, Unit* pInvoker, uint32 /*uiMiscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* pSender, Unit* pInvoker, uint32 /*uiMiscValue*/) override
     {
         if (pSender->GetEntry() != NPC_TAELAN_FORDRING)
             return;
@@ -753,9 +751,8 @@ struct npc_isillienAI: public npc_escortAI
                 SendAIEvent(AI_EVENT_CUSTOM_B, m_creature, pTaelan);
             m_bTirionSpawned = true;
         }
-        else
-            if (m_uiSummonTirionTimer)
-                m_uiSummonTirionTimer -= uiDiff;
+        else if (m_uiSummonTirionTimer)
+            m_uiSummonTirionTimer -= uiDiff;
 
         if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
             return;
@@ -822,7 +819,7 @@ struct npc_isillienAI: public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_isillien(Creature* pCreature)
+UnitAI* GetAI_npc_isillien(Creature* pCreature)
 {
     return new npc_isillienAI(pCreature);
 }
@@ -853,7 +850,7 @@ struct npc_tirion_fordringAI: public npc_escortAI
         DoCastSpellIfCan(m_creature, SPELL_DEVOTION_AURA);
     }
 
-    void MoveInLineOfSight(Unit* pWho) override
+    void MoveInLineOfSight(Unit* /*pWho*/) override
     {
         // attack only on request
     }
@@ -861,7 +858,6 @@ struct npc_tirion_fordringAI: public npc_escortAI
     void EnterEvadeMode() override
     {
         m_creature->RemoveAllAurasOnEvade();
-        m_creature->DeleteThreatList();
         m_creature->CombatStop(true);
         m_creature->SetLootRecipient(nullptr);
 
@@ -876,7 +872,7 @@ struct npc_tirion_fordringAI: public npc_escortAI
         Reset();
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* pSender, Unit* pInvoker, uint32 /*uiMiscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* pSender, Unit* pInvoker, uint32 /*uiMiscValue*/) override
     {
         if (pSender->GetEntry() != NPC_TAELAN_FORDRING)
             return;
@@ -950,16 +946,14 @@ struct npc_tirion_fordringAI: public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_tirion_fordring(Creature* pCreature)
+UnitAI* GetAI_npc_tirion_fordring(Creature* pCreature)
 {
     return new npc_tirion_fordringAI(pCreature);
 }
 
 void AddSC_western_plaguelands()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "npc_the_scourge_cauldron";
     pNewScript->GetAI = &GetAI_npc_the_scourge_cauldron;
     pNewScript->RegisterSelf();

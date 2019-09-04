@@ -21,6 +21,7 @@
 
 #include "Common.h"
 #include "Entities/ObjectGuid.h"
+#include "ByteBuffer.h"
 
 class Map;
 class Unit;
@@ -37,6 +38,8 @@ enum InstanceConditionIDs                                   // Suggested values 
     INSTANCE_CONDITION_ID_HARD_MODE_2       = 2,
     INSTANCE_CONDITION_ID_HARD_MODE_3       = 3,
     INSTANCE_CONDITION_ID_HARD_MODE_4       = 4,
+    INSTANCE_CONDITION_ID_HARD_MODE_5       = 5,
+    INSTANCE_CONDITION_ID_HARD_MODE_6       = 6,
 
     // to check for which team the instance is doing scripts
     INSTANCE_CONDITION_ID_TEAM_HORDE        = 67,
@@ -64,7 +67,7 @@ class InstanceData
         void SaveToDB() const;
 
         // Called every map update
-        virtual void Update(uint32 /*diff*/) {}
+        virtual void Update(const uint32 /*diff*/) {}
 
         // This is to prevent players from entering during boss encounters.
         virtual bool IsEncounterInProgress() const { return false; };
@@ -74,6 +77,9 @@ class InstanceData
 
         // Called when a player dies inside instance
         virtual void OnPlayerDeath(Player*) {}
+
+        // Called when a player rezzurects inside instance
+        virtual void OnPlayerResurrect(Player*) {}
 
         // Called when a player leaves the instance (before really removed from map (or possibly world))
         virtual void OnPlayerLeave(Player*) {}
@@ -96,6 +102,9 @@ class InstanceData
         // called on creature despawn
         virtual void OnCreatureDespawn(Creature* /*creature*/) {}
 
+        // called on game event
+        virtual void OnEventHappened(uint16 /*event_id*/, bool /*activate*/, bool /*resume*/) {}
+
         // All-purpose data storage 64 bit
         virtual uint64 GetData64(uint32 /*Data*/) const { return 0; }
         virtual void SetData64(uint32 /*Data*/, uint64 /*Value*/) { }
@@ -112,6 +121,23 @@ class InstanceData
         // This is used for such things are heroic loot
         // See ObjectMgr.h enum ConditionSource for possible values of conditionSourceType
         virtual bool CheckConditionCriteriaMeet(Player const* source, uint32 instance_condition_id, WorldObject const* conditionSource, uint32 conditionSourceType) const;
+
+        virtual void FillInitialWorldStates(ByteBuffer& /*data*/, uint32& /*count*/, uint32 /*zoneId*/, uint32 /*areaId*/) {}
+
+        // helper functions for world state list fill
+        inline void FillInitialWorldStateData(ByteBuffer& data, uint32& count, uint32 state, uint32 value)
+        {
+            data << uint32(state);
+            data << uint32(value);
+            ++count;
+        }
+
+        inline void FillInitialWorldStateData(ByteBuffer& data, uint32& count, uint32 state, int32 value)
+        {
+            data << uint32(state);
+            data << int32(value);
+            ++count;
+        }
 };
 
 #endif

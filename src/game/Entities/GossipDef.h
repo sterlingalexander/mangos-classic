@@ -51,6 +51,12 @@ enum Gossip_Option
     GOSSIP_OPTION_UNLEARNPETSKILLS  = 17,                   // UNIT_NPC_FLAG_TRAINER             (16) (bonus option for GOSSIP_OPTION_TRAINER)
     GOSSIP_OPTION_BOT               = 99,                   // UNIT_NPC_FLAG_GOSSIP              (1) UNUSED (just for bot system)
 
+    // Custom ones for SD2 system communication
+    GOSSIP_OPTION_SD2_1             = 100,
+    GOSSIP_OPTION_SD2_2             = 101,
+    GOSSIP_OPTION_SD2_3             = 102,
+    GOSSIP_OPTION_SD2_4             = 103,
+    GOSSIP_OPTION_SD2_5             = 104,
     GOSSIP_OPTION_MAX
 };
 
@@ -175,7 +181,7 @@ class GossipMenu
 
         // used to avoid opening gossip menu at node discover
         void SetDiscoveredNode() { m_discoveredNode = true; }
-        bool IsJustDiscoveredNode() { return m_discoveredNode; }
+        bool IsJustDiscoveredNode() const { return m_discoveredNode; }
 
         void AddGossipMenuItemData(int32 action_menu, uint32 action_poi, uint32 action_script);
 
@@ -262,7 +268,7 @@ class PlayerMenu
         QuestMenu  mQuestMenu;
 
     public:
-        explicit PlayerMenu(WorldSession* Session);
+        explicit PlayerMenu(WorldSession* session);
         ~PlayerMenu();
 
         GossipMenu& GetGossipMenu() { return mGossipMenu; }
@@ -277,7 +283,7 @@ class PlayerMenu
         uint32 GossipOptionAction(unsigned int Selection);
         bool GossipOptionCoded(unsigned int Selection);
 
-        void SendGossipMenu(uint32 titleTextId, ObjectGuid objectGuid);
+        void SendGossipMenu(uint32 TitleTextId, ObjectGuid objectGuid);
         void CloseGossip() const;
         void SendPointOfInterest(float X, float Y, uint32 Icon, uint32 Flags, uint32 Data, const char* locName) const;
         void SendPointOfInterest(uint32 poi_id) const;
@@ -292,9 +298,9 @@ class PlayerMenu
         void SendQuestGiverQuestList(QEmote eEmote, const std::string& Title, ObjectGuid npcGUID);
 
         void SendQuestQueryResponse(Quest const* pQuest) const;
-        void SendQuestGiverQuestDetails(Quest const* pQuest, ObjectGuid npcGUID, bool ActivateAccept) const;
+        void SendQuestGiverQuestDetails(Quest const* pQuest, ObjectGuid guid, bool ActivateAccept) const;
 
-        void SendQuestGiverOfferReward(Quest const* pQuest, ObjectGuid npcGUID, bool EnbleNext) const;
+        void SendQuestGiverOfferReward(Quest const* pQuest, ObjectGuid npcGUID, bool EnableNext) const;
         void SendQuestGiverRequestItems(Quest const* pQuest, ObjectGuid npcGUID, bool Completable, bool CloseOnCancel) const;
 };
 #endif

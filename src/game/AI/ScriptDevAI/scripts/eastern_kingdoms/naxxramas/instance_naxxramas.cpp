@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "naxxramas.h"
 
 static const DialogueEntry aNaxxDialogue[] =
@@ -53,9 +53,9 @@ instance_naxxramas::instance_naxxramas(Map* pMap) : ScriptedInstance(pMap),
     m_uiSapphSpawnTimer(0),
     m_uiTauntTimer(0),
     m_uiHorseMenKilled(0),
-    m_dialogueHelper(aNaxxDialogue),
     m_uiLivingPoisonTimer(5000),
-    m_uiScreamsTimer(2 * MINUTE * IN_MILLISECONDS)
+    m_uiScreamsTimer(2 * MINUTE * IN_MILLISECONDS),
+    m_dialogueHelper(aNaxxDialogue)
 {
     Initialize();
 }
@@ -101,7 +101,7 @@ void instance_naxxramas::OnCreatureCreate(Creature* pCreature)
         case NPC_SAPPHIRON:
         case NPC_KELTHUZAD:
         case NPC_THE_LICHKING:
-            m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
 
         case NPC_SUB_BOSS_TRIGGER:  m_lGothTriggerList.push_back(pCreature->GetObjectGuid()); break;
@@ -113,7 +113,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
 {
     switch (pGo->GetEntry())
     {
-            // Arachnid Quarter
+        // Arachnid Quarter
         case GO_ARAC_ANUB_DOOR:
             break;
         case GO_ARAC_ANUB_GATE:
@@ -133,7 +133,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
                 pGo->SetGoState(GO_STATE_ACTIVE);
             break;
 
-            // Plague Quarter
+        // Plague Quarter
         case GO_PLAG_NOTH_ENTRY_DOOR:
             break;
         case GO_PLAG_NOTH_EXIT_DOOR:
@@ -151,7 +151,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
         case GO_PLAG_LOAT_DOOR:
             break;
 
-            // Military Quarter
+        // Military Quarter
         case GO_MILI_GOTH_ENTRY_GATE:
             break;
         case GO_MILI_GOTH_EXIT_GATE:
@@ -167,7 +167,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
         case GO_CHEST_HORSEMEN_NORM:
             break;
 
-            // Construct Quarter
+        // Construct Quarter
         case GO_CONS_PATH_EXIT_DOOR:
             if (m_auiEncounter[TYPE_PATCHWERK] == DONE)
                 pGo->SetGoState(GO_STATE_ACTIVE);
@@ -189,7 +189,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
                 pGo->SetGoState(GO_STATE_READY);
             break;
 
-            // Frostwyrm Lair
+        // Frostwyrm Lair
         case GO_KELTHUZAD_WATERFALL_DOOR:
             if (m_auiEncounter[TYPE_SAPPHIRON] == DONE)
                 pGo->SetGoState(GO_STATE_ACTIVE);
@@ -201,7 +201,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
         case GO_KELTHUZAD_WINDOW_4:
             break;
 
-            // Eyes
+        // Eyes
         case GO_ARAC_EYE_RAMP:
         case GO_ARAC_EYE_BOSS:
             if (m_auiEncounter[TYPE_MAEXXNA] == DONE)
@@ -223,7 +223,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
                 pGo->SetGoState(GO_STATE_ACTIVE);
             break;
 
-            // Portals
+        // Portals
         case GO_ARAC_PORTAL:
             if (m_auiEncounter[TYPE_MAEXXNA] == DONE)
                 pGo->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT);
@@ -259,7 +259,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
 
             return;
     }
-    m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+    m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
 }
 
 void instance_naxxramas::OnCreatureDeath(Creature* pCreature)
@@ -277,10 +277,7 @@ bool instance_naxxramas::IsEncounterInProgress() const
     }
 
     // Some Encounters use SPECIAL while in progress
-    if (m_auiEncounter[TYPE_GOTHIK] == SPECIAL)
-        return true;
-
-    return false;
+    return m_auiEncounter[TYPE_GOTHIK] == SPECIAL;
 }
 
 void instance_naxxramas::SetData(uint32 uiType, uint32 uiData)
@@ -503,10 +500,10 @@ void instance_naxxramas::Load(const char* chrIn)
                >> m_auiEncounter[8] >> m_auiEncounter[9] >> m_auiEncounter[10] >> m_auiEncounter[11]
                >> m_auiEncounter[12] >> m_auiEncounter[13] >> m_auiEncounter[14] >> m_auiEncounter[15];
 
-    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
+    for (uint32& i : m_auiEncounter)
     {
-        if (m_auiEncounter[i] == IN_PROGRESS)
-            m_auiEncounter[i] = NOT_STARTED;
+        if (i == IN_PROGRESS)
+            i = NOT_STARTED;
     }
 
     OUT_LOAD_INST_DATA_COMPLETE;
@@ -548,7 +545,7 @@ void instance_naxxramas::Update(uint32 uiDiff)
         if (m_uiScreamsTimer <= uiDiff)
         {
             if (Player* pPlayer = GetPlayerInMap())
-                pPlayer->GetMap()->PlayDirectSoundToMap(SOUND_SCREAM1 + urand(0,3));
+                pPlayer->GetMap()->PlayDirectSoundToMap(SOUND_SCREAM1 + urand(0, 3));
             m_uiScreamsTimer = (2 * MINUTE + urand(0, 30)) * IN_MILLISECONDS;
         }
         else
@@ -606,15 +603,15 @@ Creature* instance_naxxramas::GetClosestAnchorForGoth(Creature* pSource, bool bR
 {
     std::list<Creature* > lList;
 
-    for (std::unordered_map<ObjectGuid, GothTrigger>::iterator itr = m_mGothTriggerMap.begin(); itr != m_mGothTriggerMap.end(); ++itr)
+    for (auto& itr : m_mGothTriggerMap)
     {
-        if (!itr->second.bIsAnchorHigh)
+        if (!itr.second.bIsAnchorHigh)
             continue;
 
-        if (itr->second.bIsRightSide != bRightSide)
+        if (itr.second.bIsRightSide != bRightSide)
             continue;
 
-        if (Creature* pCreature = instance->GetCreature(itr->first))
+        if (Creature* pCreature = instance->GetCreature(itr.first))
             lList.push_back(pCreature);
     }
 
@@ -627,17 +624,17 @@ Creature* instance_naxxramas::GetClosestAnchorForGoth(Creature* pSource, bool bR
     return nullptr;
 }
 
-void instance_naxxramas::GetGothSummonPointCreatures(std::list<Creature*>& lList, bool bRightSide)
+void instance_naxxramas::GetGothSummonPointCreatures(CreatureList& lList, bool bRightSide)
 {
-    for (std::unordered_map<ObjectGuid, GothTrigger>::iterator itr = m_mGothTriggerMap.begin(); itr != m_mGothTriggerMap.end(); ++itr)
+    for (auto& itr : m_mGothTriggerMap)
     {
-        if (itr->second.bIsAnchorHigh)
+        if (itr.second.bIsAnchorHigh)
             continue;
 
-        if (itr->second.bIsRightSide != bRightSide)
+        if (itr.second.bIsRightSide != bRightSide)
             continue;
 
-        if (Creature* pCreature = instance->GetCreature(itr->first))
+        if (Creature* pCreature = instance->GetCreature(itr.first))
             lList.push_back(pCreature);
     }
 }
@@ -762,9 +759,7 @@ bool AreaTrigger_at_naxxramas(Player* pPlayer, AreaTriggerEntry const* pAt)
 
 void AddSC_instance_naxxramas()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "instance_naxxramas";
     pNewScript->GetInstanceData = &GetInstanceData_instance_naxxramas;
     pNewScript->RegisterSelf();

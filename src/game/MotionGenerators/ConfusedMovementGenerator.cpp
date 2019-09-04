@@ -85,8 +85,8 @@ bool ConfusedMovementGenerator<T>::Update(T& unit, const uint32& diff)
             float destY = i_y;
             float destZ = i_z;
 
-            // check if new random position is assigned, GetReachableRandomPosition may fail
-            if (unit.GetMap()->GetReachableRandomPosition(&unit, destX, destY, destZ, 10.0f))
+            // check if new random position is assigned (GetReachableRandomPosition may fail) and dest is visible
+            if (unit.GetMap()->GetReachableRandomPosition(&unit, destX, destY, destZ, 10.0f) && unit.IsWithinLOS(destX, destY, destZ))
             {
                 Movement::MoveSplineInit init(unit);
                 init.MoveTo(destX, destY, destZ, true);
@@ -106,7 +106,6 @@ template<>
 void ConfusedMovementGenerator<Player>::Finalize(Player& unit) const
 {
     unit.clearUnitState(UNIT_STAT_CONFUSED | UNIT_STAT_CONFUSED_MOVE);
-    unit.SetConfused(false);
     unit.StopMoving(true);
 }
 
@@ -114,7 +113,6 @@ template<>
 void ConfusedMovementGenerator<Creature>::Finalize(Creature& unit) const
 {
     unit.clearUnitState(UNIT_STAT_CONFUSED | UNIT_STAT_CONFUSED_MOVE);
-    unit.SetConfused(false);
 }
 
 template void ConfusedMovementGenerator<Player>::Initialize(Player& player);

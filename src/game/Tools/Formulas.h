@@ -20,6 +20,8 @@
 #define MANGOS_FORMULAS_H
 
 #include "World/World.h"
+// TODO: Required for classic honor system type HonorStandingList, needs redesign:
+#include "Globals/ObjectMgr.h"
 
 struct HonorScores
 {
@@ -275,109 +277,101 @@ namespace MaNGOS
         {
             if (pl_level <= 5)
                 return 0;
-            else if (pl_level <= 39)
+            if (pl_level <= 39)
                 return pl_level - 5 - pl_level / 10;
-            else if (pl_level <= 59)
+            if (pl_level <= 59)
                 return pl_level - 1 - pl_level / 5;
-            else
-                return pl_level - 9;
+            return pl_level - 9;
         }
 
         inline XPColorChar GetColorCode(uint32 pl_level, uint32 mob_level)
         {
             if (mob_level >= pl_level + 5)
                 return RED;
-            else if (mob_level >= pl_level + 3)
+            if (mob_level >= pl_level + 3)
                 return ORANGE;
-            else if (mob_level >= pl_level - 2)
+            if (mob_level >= pl_level - 2)
                 return YELLOW;
-            else if (mob_level > GetGrayLevel(pl_level))
+            if (mob_level > GetGrayLevel(pl_level))
                 return GREEN;
-            else
-                return GRAY;
+            return GRAY;
         }
 
-        inline uint32 GetZeroDifference(uint32 pl_level)
+        inline uint32 GetZeroDifference(uint32 unit_level)
         {
-            if (pl_level < 8)  return 5;
-            if (pl_level < 10) return 6;
-            if (pl_level < 12) return 7;
-            if (pl_level < 16) return 8;
-            if (pl_level < 20) return 9;
-            if (pl_level < 30) return 11;
-            if (pl_level < 40) return 12;
-            if (pl_level < 45) return 13;
-            if (pl_level < 50) return 14;
-            if (pl_level < 55) return 15;
-            if (pl_level < 60) return 16;
+            if (unit_level < 8)  return 5;
+            if (unit_level < 10) return 6;
+            if (unit_level < 12) return 7;
+            if (unit_level < 16) return 8;
+            if (unit_level < 20) return 9;
+            if (unit_level < 30) return 11;
+            if (unit_level < 40) return 12;
+            if (unit_level < 45) return 13;
+            if (unit_level < 50) return 14;
+            if (unit_level < 55) return 15;
+            if (unit_level < 60) return 16;
             return 17;
         }
 
-        inline uint32 BaseGain(uint32 pl_level, uint32 mob_level)
+        inline float BaseGain(uint32 unit_level, uint32 mob_level)
         {
-            const uint32 nBaseExp = 45;
-            if (mob_level >= pl_level)
+            const uint32 nBaseExp = unit_level * 5 + 45;
+            if (mob_level >= unit_level)
             {
-                uint32 nLevelDiff = mob_level - pl_level;
+                uint32 nLevelDiff = mob_level - unit_level;
                 if (nLevelDiff > 4)
                     nLevelDiff = 4;
-                return ((pl_level * 5 + nBaseExp) * (20 + nLevelDiff) / 10 + 1) / 2;
+                return nBaseExp * (1.0f + (0.05f * nLevelDiff));
             }
-            else
+            uint32 gray_level = GetGrayLevel(unit_level);
+            if (mob_level > gray_level)
             {
-                uint32 gray_level = GetGrayLevel(pl_level);
-                if (mob_level > gray_level)
-                {
-                    uint32 ZD = GetZeroDifference(pl_level);
-                    return (pl_level * 5 + nBaseExp) * (ZD + mob_level - pl_level) / ZD;
-                }
-                return 0;
+                uint32 ZD = GetZeroDifference(unit_level);
+                uint32 nLevelDiff = unit_level - mob_level;
+                return nBaseExp * (1.0f - (float(nLevelDiff) / ZD));
             }
+            return 0;
         }
 
-        inline uint32 Gain(Player* pl, Unit* u)
+        inline uint32 Gain(Unit const* unit, Creature* target)
         {
-            if (Creature* creatureUnit = dynamic_cast<Creature*>(u))
-            {
-                uint32 xp_gain = 1;
-
-                if (creatureUnit->GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_XP_AT_KILL)
-                    return 0;
-                else if (creatureUnit->IsElite())
-                    xp_gain *= 2;
-
-                xp_gain *= BaseGain(pl->getLevel(), u->getLevel());
-                xp_gain *= creatureUnit->GetCreatureInfo()->ExperienceMultiplier;
-
-                return (uint32)(xp_gain * sWorld.getConfig(CONFIG_FLOAT_RATE_XP_KILL));
-            }
-            else
+            if (target->IsTotem() || target->IsPet() || target->IsNoXp() || target->IsCritter())
                 return 0;
+
+            float xp_gain = BaseGain(unit->getLevel(), target->getLevel());
+            if (xp_gain == 0.0f)
+                return 0;
+
+            if (target->IsElite())
+            {
+                if (target->GetMap()->IsNoRaid())
+                    xp_gain *= 2.5f;
+                else
+                    xp_gain *= 2.0f;
+            }
+
+            xp_gain *= target->GetCreatureInfo()->ExperienceMultiplier;
+
+            return (uint32)(std::nearbyint(xp_gain * sWorld.getConfig(CONFIG_FLOAT_RATE_XP_KILL)));
         }
 
-        inline float xp_in_group_rate(uint32 count, bool isRaid)
+        inline float xp_in_group_rate(uint32 count, bool /*isRaid*/)
         {
-            if (isRaid)
+            // TODO: this formula is completely guesswork only based on a logical assumption
+            switch (count)
             {
-                // FIX ME: must apply decrease modifiers dependent from raid size
-                return 1.0f;
-            }
-            else
-            {
-                switch (count)
-                {
-                    case 0:
-                    case 1:
-                    case 2:
-                        return 1.0f;
-                    case 3:
-                        return 1.166f;
-                    case 4:
-                        return 1.3f;
-                    case 5:
-                    default:
-                        return 1.4f;
-                }
+                case 0:
+                case 1:
+                case 2:
+                    return 1.0f;
+                case 3:
+                    return 1.166f;
+                case 4:
+                    return 1.3f;
+                case 5:
+                    return 1.4f;
+                default:
+                    return std::max(1.f - count * 0.05f, 0.01f);
             }
         }
     }

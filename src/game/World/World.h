@@ -33,6 +33,7 @@
 #include <deque>
 #include <mutex>
 #include <functional>
+#include <utility>
 #include <vector>
 
 class Object;
@@ -124,7 +125,6 @@ enum eConfigUInt32Values
     CONFIG_UINT32_GM_LEVEL_IN_WHO_LIST,
     CONFIG_UINT32_START_GM_LEVEL,
     CONFIG_UINT32_GM_INVISIBLE_AURA,
-    CONFIG_UINT32_GROUP_VISIBILITY,
     CONFIG_UINT32_MAIL_DELIVERY_DELAY,
     CONFIG_UINT32_MASS_MAILER_SEND_PER_TICK,
     CONFIG_UINT32_UPTIME_UPDATE,
@@ -146,6 +146,8 @@ enum eConfigUInt32Values
     CONFIG_UINT32_CREATURE_FAMILY_ASSISTANCE_DELAY,
     CONFIG_UINT32_CREATURE_FAMILY_FLEE_DELAY,
     CONFIG_UINT32_WORLD_BOSS_LEVEL_DIFF,
+    CONFIG_UINT32_QUEST_WEEKLY_RESET_WEEK_DAY,
+    CONFIG_UINT32_QUEST_WEEKLY_RESET_HOUR,
     CONFIG_UINT32_CHAT_STRICT_LINK_CHECKING_SEVERITY,
     CONFIG_UINT32_CHAT_STRICT_LINK_CHECKING_KICK,
     CONFIG_UINT32_CORPSE_DECAY_NORMAL,
@@ -160,12 +162,9 @@ enum eConfigUInt32Values
     CONFIG_UINT32_BATTLEGROUND_QUEUE_ANNOUNCER_JOIN,
     CONFIG_UINT32_GROUP_OFFLINE_LEADER_DELAY,
     CONFIG_UINT32_GUILD_EVENT_LOG_COUNT,
-    CONFIG_UINT32_TIMERBAR_FATIGUE_GMLEVEL,
-    CONFIG_UINT32_TIMERBAR_FATIGUE_MAX,
-    CONFIG_UINT32_TIMERBAR_BREATH_GMLEVEL,
-    CONFIG_UINT32_TIMERBAR_BREATH_MAX,
-    CONFIG_UINT32_TIMERBAR_FIRE_GMLEVEL,
-    CONFIG_UINT32_TIMERBAR_FIRE_MAX,
+    CONFIG_UINT32_MIRRORTIMER_FATIGUE_MAX,
+    CONFIG_UINT32_MIRRORTIMER_BREATH_MAX,
+    CONFIG_UINT32_MIRRORTIMER_ENVIRONMENTAL_MAX,
     CONFIG_UINT32_MIN_LEVEL_STAT_SAVE,
     CONFIG_UINT32_MAINTENANCE_DAY,
     CONFIG_UINT32_CHARDELETE_KEEP_DAYS,
@@ -175,6 +174,9 @@ enum eConfigUInt32Values
     CONFIG_UINT32_GUID_RESERVE_SIZE_GAMEOBJECT,
     CONFIG_UINT32_CREATURE_RESPAWN_AGGRO_DELAY,
     CONFIG_UINT32_MAX_WHOLIST_RETURNS,
+    CONFIG_UINT32_FOGOFWAR_STEALTH,
+    CONFIG_UINT32_FOGOFWAR_HEALTH,
+    CONFIG_UINT32_FOGOFWAR_STATS,
     CONFIG_UINT32_VALUE_COUNT
 };
 
@@ -280,6 +282,7 @@ enum eConfigBoolValues
     CONFIG_BOOL_ALLOW_TWO_SIDE_ADD_FRIEND,
     CONFIG_BOOL_INSTANCE_IGNORE_LEVEL,
     CONFIG_BOOL_INSTANCE_IGNORE_RAID,
+    CONFIG_BOOL_INSTANCE_STRICT_COMBAT_LOCKDOWN,
     CONFIG_BOOL_CAST_UNSTUCK,
     CONFIG_BOOL_GM_LOG_TRADE,
     CONFIG_BOOL_GM_LOWER_SECURITY,
@@ -295,10 +298,12 @@ enum eConfigBoolValues
     CONFIG_BOOL_CHAT_STRICT_LINK_CHECKING_KICK,
     CONFIG_BOOL_ADDON_CHANNEL,
     CONFIG_BOOL_CORPSE_EMPTY_LOOT_SHOW,
+    CONFIG_BOOL_CORPSE_ALLOW_ALL_ITEMS_SHOW_IN_MASTER_LOOT,
     CONFIG_BOOL_DEATH_CORPSE_RECLAIM_DELAY_PVP,
     CONFIG_BOOL_DEATH_CORPSE_RECLAIM_DELAY_PVE,
     CONFIG_BOOL_DEATH_BONES_WORLD,
     CONFIG_BOOL_DEATH_BONES_BG,
+    CONFIG_BOOL_LONG_TAXI_PATHS_PERSISTENCE,
     CONFIG_BOOL_ALL_TAXI_PATHS,
     CONFIG_BOOL_SKILL_FAIL_LOOT_FISHING,
     CONFIG_BOOL_SKILL_FAIL_GAIN_FISHING,
@@ -313,6 +318,7 @@ enum eConfigBoolValues
     CONFIG_BOOL_CLEAN_CHARACTER_DB,
     CONFIG_BOOL_VMAP_INDOOR_CHECK,
     CONFIG_BOOL_PET_UNSUMMON_AT_MOUNT,
+    CONFIG_BOOL_PET_ATTACK_FROM_BEHIND,
     CONFIG_BOOL_MMAP_ENABLED,
     CONFIG_BOOL_PLAYER_COMMANDS,
     CONFIG_BOOL_PATH_FIND_OPTIMIZE,
@@ -370,7 +376,7 @@ enum RealmZone
 /// Storage class for commands issued for delayed execution
 struct CliCommandHolder
 {
-    typedef std::function<void(const char *)> Print;
+    typedef std::function<void(const char*)> Print;
     typedef std::function<void(bool)> CommandFinished;
 
     uint32 m_cliAccountId;                                  // 0 for console and real account id for RA/soap
@@ -380,7 +386,7 @@ struct CliCommandHolder
     CommandFinished m_commandFinished;
 
     CliCommandHolder(uint32 accountId, AccountTypes cliAccessLevel, const char* command, Print print, CommandFinished commandFinished)
-        : m_cliAccountId(accountId), m_cliAccessLevel(cliAccessLevel), m_command(strlen(command) + 1), m_print(print), m_commandFinished(commandFinished)
+        : m_cliAccountId(accountId), m_cliAccessLevel(cliAccessLevel), m_command(strlen(command) + 1), m_print(std::move(print)), m_commandFinished(std::move(commandFinished))
     {
         memcpy(&m_command[0], command, m_command.size() - 1);
     }
@@ -419,7 +425,7 @@ class World
         // player Queue
         typedef std::list<WorldSession*> Queue;
         void AddQueuedSession(WorldSession*);
-        bool RemoveQueuedSession(WorldSession* session);
+        bool RemoveQueuedSession(WorldSession* sess);
         int32 GetQueuedSessionPos(WorldSession*);
 
         /// \todo Actions on m_allowMovement still to be implemented
@@ -467,8 +473,10 @@ class World
 
         void SetInitialWorldSettings();
         void LoadConfigSettings(bool reload = false);
+        void LoadSpamRecords(bool reload = false);
 
         void SendWorldText(int32 string_id, ...);
+        void SendWorldTextToAboveSecurity(uint32 securityLevel, int32 string_id, ...);
         void SendGlobalMessage(WorldPacket const& packet) const;
         void SendServerMessage(ServerMessageType type, const char* text = "", Player* player = nullptr) const;
         void SendZoneUnderAttackMessage(uint32 zoneId, Team team);
@@ -524,12 +532,8 @@ class World
         static float GetMaxVisibleDistanceInInstances()     { return m_MaxVisibleDistanceInInstances;  }
         static float GetMaxVisibleDistanceInBG()            { return m_MaxVisibleDistanceInBG;         }
 
-        static float GetMaxVisibleDistanceInFlight()        { return m_MaxVisibleDistanceInFlight;    }
-        static float GetVisibleUnitGreyDistance()           { return m_VisibleUnitGreyDistance;       }
-        static float GetVisibleObjectGreyDistance()         { return m_VisibleObjectGreyDistance;     }
-
-        static float GetRelocationLowerLimitSq()            { return m_relocation_lower_limit_sq; }
-        static uint32 GetRelocationAINotifyDelay()          { return m_relocation_ai_notify_delay; }
+        static float GetRelocationLowerLimitSq() { return m_relocation_lower_limit_sq; }
+        static uint32 GetRelocationAINotifyDelay() { return m_relocation_ai_notify_delay; }
 
         void InitServerMaintenanceCheck();
         void ServerMaintenanceStart();
@@ -540,15 +544,20 @@ class World
         void UpdateResultQueue();
         void InitResultQueue();
 
-        void UpdateRealmCharCount(uint32 accid);
+        void UpdateRealmCharCount(uint32 accountId);
 
-        LocaleConstant GetAvailableDbcLocale(LocaleConstant locale) const { if (m_availableDbcLocaleMask & (1 << locale)) return locale; else return m_defaultDbcLocale; }
+        LocaleConstant GetAvailableDbcLocale(LocaleConstant locale) const
+        {
+            if (m_availableDbcLocaleMask & (1 << locale)) return locale;
+            return m_defaultDbcLocale;
+        }
 
         // used World DB version
         void LoadDBVersion();
         char const* GetDBVersion() const { return m_DBVersion.c_str(); }
         char const* GetCreatureEventAIVersion() const { return m_CreatureEventAIVersion.c_str(); }
 
+        std::vector<std::string> GetSpamRecords() const { return m_spamRecords; }
 
         /**
         * \brief: force all client to request player data
@@ -561,12 +570,17 @@ class World
         **/
         void InvalidatePlayerDataToAllClient(ObjectGuid guid) const;
 
+        static uint32 GetCurrentMSTime() { return m_currentMSTime; }
         static TimePoint GetCurrentClockTime() { return m_currentTime; }
+        static uint32 GetCurrentDiff() { return m_currentDiff; }
 
     protected:
         void _UpdateGameTime();
         // callback for UpdateRealmCharacters
         void _UpdateRealmCharCount(QueryResult* resultCharCount, uint32 accountId);
+
+        void InitWeeklyQuestResetTime();
+        void ResetWeeklyQuests();
 
     private:
         void setConfig(eConfigUInt32Values index, char const* fieldname, uint32 defvalue);
@@ -622,16 +636,15 @@ class World
         static float m_MaxVisibleDistanceInInstances;
         static float m_MaxVisibleDistanceInBG;
 
-        static float m_MaxVisibleDistanceInFlight;
-        static float m_VisibleUnitGreyDistance;
-        static float m_VisibleObjectGreyDistance;
-
         static float  m_relocation_lower_limit_sq;
         static uint32 m_relocation_ai_notify_delay;
 
         // CLI command holder to be thread safe
         std::mutex m_cliCommandQueueLock;
-        std::deque<const CliCommandHolder *> m_cliCommandQueue;
+        std::deque<const CliCommandHolder*> m_cliCommandQueue;
+
+        // next weekly quests reset time
+        time_t m_NextWeeklyQuestReset;
 
         // Player Queue
         Queue m_QueuedSessions;
@@ -640,7 +653,7 @@ class World
         void AddSession_(WorldSession* s);
 
         std::mutex m_sessionAddQueueLock;
-        std::deque<WorldSession *> m_sessionAddQueue;
+        std::deque<WorldSession*> m_sessionAddQueue;
 
         // used versions
         std::string m_DBVersion;
@@ -649,7 +662,11 @@ class World
         // List of Maps that should be force-loaded on startup
         std::set<uint32> m_configForceLoadMapIds;
 
+        std::vector<std::string> m_spamRecords;
+
+        static uint32 m_currentMSTime;
         static TimePoint m_currentTime;
+        static uint32 m_currentDiff;
 };
 
 extern uint32 realmID;

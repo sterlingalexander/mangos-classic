@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
 
 /*######
@@ -58,7 +58,7 @@ struct npc_kayaAI : public npc_escortAI
     {
         switch (uiPointId)
         {
-                // Ambush
+            // Ambush
             case 16:
                 // note about event here:
                 // apparently NPC say _after_ the ambush is over, and is most likely a bug at you-know-where.
@@ -68,18 +68,18 @@ struct npc_kayaAI : public npc_escortAI
                 m_creature->SummonCreature(NPC_GRIMTOTEM_BRUTE, -40.05f, -510.89f, -46.05f, 1.7f, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 30000);
                 m_creature->SummonCreature(NPC_GRIMTOTEM_SORCERER, -32.21f, -499.20f, -45.35f, 2.8f, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 30000);
                 break;
-                // Award quest credit
+            // Award quest credit
             case 18:
                 DoScriptText(SAY_END, m_creature);
 
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_PROTECT_KAYA, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_PROTECT_KAYA, m_creature);
                 break;
         }
     }
 };
 
-CreatureAI* GetAI_npc_kaya(Creature* pCreature)
+UnitAI* GetAI_npc_kaya(Creature* pCreature)
 {
     return new npc_kayaAI(pCreature);
 }
@@ -90,7 +90,7 @@ bool QuestAccept_npc_kaya(Player* pPlayer, Creature* pCreature, Quest const* pQu
 
     if (pQuest->GetQuestId() == QUEST_PROTECT_KAYA)
     {
-        pCreature->SetFactionTemporary(FACTION_ESCORT_H_PASSIVE, TEMPFACTION_RESTORE_RESPAWN);
+        pCreature->SetFactionTemporary(FACTION_ESCORT_H_PASSIVE, TEMPFACTION_RESTORE_RESPAWN | TEMPFACTION_TOGGLE_IMMUNE_TO_NPC);
         DoScriptText(SAY_START, pCreature);
 
         if (npc_kayaAI* pEscortAI = dynamic_cast<npc_kayaAI*>(pCreature->AI()))
@@ -105,9 +105,7 @@ bool QuestAccept_npc_kaya(Player* pPlayer, Creature* pCreature, Quest const* pQu
 
 void AddSC_stonetalon_mountains()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "npc_kaya";
     pNewScript->GetAI = &GetAI_npc_kaya;
     pNewScript->pQuestAcceptNPC = &QuestAccept_npc_kaya;

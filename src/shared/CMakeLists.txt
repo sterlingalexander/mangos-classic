@@ -23,11 +23,13 @@ set(SRC_GRP_AUTH
     Auth/AuthCrypt.h
     Auth/BigNumber.cpp
     Auth/BigNumber.h
-    Auth/Hmac.cpp
-    Auth/Hmac.h
+    Auth/HMACSHA1.cpp
+    Auth/HMACSHA1.h
     Auth/md5.h
     Auth/Sha1.cpp
     Auth/Sha1.h
+    Auth/base32.cpp
+    Auth/base32.h
 )
 
 set(SRC_GRP_CONFIG
@@ -95,6 +97,11 @@ set(SRC_GRP_UTIL
     WorldPacket.h
 )
 
+set(SRC_GRP_SRP
+    SRP6/SRP6.cpp
+    SRP6/SRP6.h
+)
+
 set(LIBRARY_SRCS
     ${SRC_GRP_AUTH}
     ${SRC_GRP_CONFIG}
@@ -102,6 +109,7 @@ set(LIBRARY_SRCS
     ${SRC_GRP_DATABASE_DBC}
     ${SRC_GRP_LOG}
     ${SRC_GRP_UTIL}
+    ${SRC_GRP_SRP}
     ${SRC_GRP_NETWORK}
     Common.cpp
     Common.h
@@ -139,6 +147,11 @@ source_group("Log"
 source_group("Util"
   FILES
     ${SRC_GRP_UTIL}
+)
+
+source_group("SRP"
+  FILES
+    ${SRC_GRP_SRP}
 )
 
 # OS specific files
@@ -190,8 +203,9 @@ target_link_libraries(${LIBRARY_NAME}
 )
 
 target_include_directories(${LIBRARY_NAME}
-  INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
   PUBLIC ${OPENSSL_INCLUDE_DIR}
+  PRIVATE ${Boost_INCLUDE_DIRS}
 )
 
 if(POSTGRESQL AND POSTGRESQL_FOUND AND NOT WIN32)
@@ -199,11 +213,6 @@ if(POSTGRESQL AND POSTGRESQL_FOUND AND NOT WIN32)
 else()
   target_include_directories(${LIBRARY_NAME} PUBLIC ${MYSQL_INCLUDE_DIR})
 endif()
-
-add_custom_command(TARGET ${LIBRARY_NAME} PRE_BUILD
-      COMMAND RevisionGenerator ${CMAKE_SOURCE_DIR}
-      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/src/shared
-      DEPENDS RevisionGenerator)
 
 # Mark the revision header as being generated.
 set_source_files_properties(${CMAKE_SOURCE_DIR}/src/shared/revision.h

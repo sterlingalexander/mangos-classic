@@ -58,6 +58,7 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
     public:
         typedef std::map<MapID, Map* > MapMapType;
 
+        void CreateContinents();
         Map* CreateMap(uint32, const WorldObject* obj);
         Map* CreateBgMap(uint32 mapid, BattleGround* bg);
         Map* FindMap(uint32 mapid, uint32 instanceId = 0) const;
@@ -140,17 +141,21 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
         uint32 GenerateInstanceId() { return ++i_MaxInstanceId; }
         void InitMaxInstanceId();
         void InitializeVisibilityDistanceInfo();
-
         /* statistics */
         uint32 GetNumInstances();
         uint32 GetNumPlayersInInstances();
 
+        uint32 GetMapUpdateMinTime(uint32 mapId, uint32 instance = 0);
+        uint32 GetMapUpdateMaxTime(uint32 mapId, uint32 instance = 0);
+        uint32 GetMapUpdateAvgTime(uint32 mapId, uint32 instance = 0);
 
         // get list of all maps
         const MapMapType& Maps() const { return i_maps; }
 
-        template<typename Do>
-        void DoForAllMapsWithMapId(uint32 mapId, Do& _do);
+        template<typename Do> void DoForAllMapsWithMapId(uint32 mapId, Do& _do);
+        template<typename Check> inline WorldObject* SearchOnAllLoadedMap(Check& check);
+        void DoForAllMaps(const std::function<void(Map*)>& worker);
+        void DoForAllMapsWithMapId(uint32 mapId, std::function<void(Map*)> worker);
 
     private:
 
@@ -173,6 +178,7 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
         DungeonMap* CreateDungeonMap(uint32 id, uint32 InstanceId, DungeonPersistentState* save = nullptr);
         BattleGroundMap* CreateBattleGroundMap(uint32 id, uint32 InstanceId, BattleGround* bg);
 
+        std::mutex m_lock;
         uint32 i_gridCleanUpDelay;
         MapMapType i_maps;
         IntervalTimer i_timer;
@@ -187,6 +193,18 @@ inline void MapManager::DoForAllMapsWithMapId(uint32 mapId, Do& _do)
     MapMapType::const_iterator end   = i_maps.lower_bound(MapID(mapId + 1, 0));
     for (MapMapType::const_iterator itr = start; itr != end; ++itr)
         _do(itr->second);
+}
+
+template<typename Check>
+inline WorldObject* MapManager::SearchOnAllLoadedMap(Check& check)
+{
+    for (auto& mapItr : i_maps)
+    {
+        WorldObject* result = check(mapItr.second);
+        if (result)
+            return result;
+    }
+    return nullptr;
 }
 
 #define sMapMgr MapManager::Instance()

@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "blackrock_spire.h"
 
 enum
@@ -66,7 +66,7 @@ struct boss_gythAI : public ScriptedAI
         uiKnockAwayTimer     = 23000;
         m_bSummonedRend      = false;
         m_bHasChromaticChaos = false;
-
+        SetDeathPrevention(true);
         DoCastSpellIfCan(m_creature, SPELL_REND_MOUNTS);
     }
 
@@ -135,6 +135,7 @@ struct boss_gythAI : public ScriptedAI
         {
             if (DoCastSpellIfCan(m_creature, SPELL_SUMMON_REND) == CAST_OK)
             {
+                SetDeathPrevention(false);
                 m_creature->RemoveAurasDueToSpell(SPELL_REND_MOUNTS);
                 m_bSummonedRend = true;
             }
@@ -144,16 +145,14 @@ struct boss_gythAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_gyth(Creature* pCreature)
+UnitAI* GetAI_boss_gyth(Creature* pCreature)
 {
     return new boss_gythAI(pCreature);
 }
 
 void AddSC_boss_gyth()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_gyth";
     pNewScript->GetAI = &GetAI_boss_gyth;
     pNewScript->RegisterSelf();

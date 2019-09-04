@@ -21,42 +21,46 @@
 #include "AI/BaseAI/CreatureAI.h"
 
 TemporarySpawn::TemporarySpawn(ObjectGuid summoner) :
-    Creature(CREATURE_SUBTYPE_TEMPORARY_SUMMON), m_type(TEMPSPAWN_TIMED_OOC_OR_CORPSE_DESPAWN), m_timer(0), m_lifetime(0), m_spawner(summoner), m_linkedToOwnerAura(0)
+    Creature(CREATURE_SUBTYPE_TEMPORARY_SUMMON), m_type(TEMPSPAWN_TIMED_OOC_OR_CORPSE_DESPAWN), m_lifetime(0), m_spawner(summoner), m_linkedToOwnerAura(0)
 {
 }
 
-void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
+void TemporarySpawn::Update(const uint32 diff)
 {
     switch (m_type)
     {
         case TEMPSPAWN_MANUAL_DESPAWN:
             break;
+
         case TEMPSPAWN_TIMED_DESPAWN:
         {
-            if (m_timer <= update_diff)
+            if (IsExpired())
             {
                 UnSummon();
                 return;
             }
-
-            m_timer -= update_diff;
             break;
         }
+
         case TEMPSPAWN_TIMED_OOC_DESPAWN:
         {
-            if (!isInCombat())
+            if (isAlive())
             {
-                if (m_timer <= update_diff)
+                if (!isInCombat())
                 {
-                    UnSummon();
-                    return;
+                    if (IsExpired())
+                    {
+                        UnSummon();
+                        return;
+                    }
                 }
-
-                m_timer -= update_diff;
+                else m_expirationTimestamp = GetMap()->GetCurrentClockTime() + std::chrono::milliseconds(m_lifetime);
             }
-            else if (m_timer != m_lifetime)
-                m_timer = m_lifetime;
-
+            else if (IsDespawned())
+            {
+                UnSummon();
+                return;
+            }
             break;
         }
 
@@ -64,13 +68,11 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
         {
             if (IsCorpse())
             {
-                if (m_timer <= update_diff)
+                if (IsExpired())
                 {
                     UnSummon();
                     return;
                 }
-
-                m_timer -= update_diff;
             }
             if (IsDespawned())
             {
@@ -79,6 +81,7 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
             }
             break;
         }
+
         case TEMPSPAWN_CORPSE_DESPAWN:
         {
             // if m_deathState is DEAD, CORPSE was skipped
@@ -90,6 +93,7 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
 
             break;
         }
+
         case TEMPSPAWN_DEAD_DESPAWN:
         {
             if (IsDespawned())
@@ -99,6 +103,7 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
             }
             break;
         }
+
         case TEMPSPAWN_TIMED_OOC_OR_CORPSE_DESPAWN:
         {
             // if m_deathState is DEAD, CORPSE was skipped
@@ -110,18 +115,17 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
 
             if (!isInCombat())
             {
-                if (m_timer <= update_diff)
+                if (IsExpired())
                 {
                     UnSummon();
                     return;
                 }
-                else
-                    m_timer -= update_diff;
             }
-            else if (m_timer != m_lifetime)
-                m_timer = m_lifetime;
+            else m_expirationTimestamp = GetMap()->GetCurrentClockTime() + std::chrono::milliseconds(m_lifetime);
+
             break;
         }
+
         case TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN:
         {
             // if m_deathState is DEAD, CORPSE was skipped
@@ -131,20 +135,19 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
                 return;
             }
 
-            if (!isInCombat() && isAlive())
+            if (!isInCombat() && isAlive() && !GetCharmerGuid())
             {
-                if (m_timer <= update_diff)
+                if (IsExpired())
                 {
                     UnSummon();
                     return;
                 }
-                else
-                    m_timer -= update_diff;
             }
-            else if (m_timer != m_lifetime)
-                m_timer = m_lifetime;
+            else m_expirationTimestamp = GetMap()->GetCurrentClockTime() + std::chrono::milliseconds(m_lifetime);
+
             break;
         }
+
         case TEMPSPAWN_TIMED_OR_CORPSE_DESPAWN:
         {
             // if m_deathState is DEAD, CORPSE was skipped
@@ -153,14 +156,14 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
                 UnSummon();
                 return;
             }
-            if (m_timer <= update_diff)
+            if (IsExpired())
             {
                 UnSummon();
                 return;
             }
-            m_timer -= update_diff;
             break;
         }
+
         case TEMPSPAWN_TIMED_OR_DEAD_DESPAWN:
         {
             // if m_deathState is DEAD, CORPSE was skipped
@@ -169,14 +172,17 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
                 UnSummon();
                 return;
             }
-            if (m_timer <= update_diff)
+            if (!GetCharmerGuid())
             {
-                UnSummon();
-                return;
+                if (IsExpired())
+                {
+                    UnSummon();
+                    return;
+                }
             }
-            m_timer -= update_diff;
             break;
         }
+
         default:
             UnSummon();
             sLog.outError("Temporary summoned creature (entry: %u) have unknown type %u of ", GetEntry(), m_type);
@@ -188,10 +194,7 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
         case ALIVE:
             if (m_linkedToOwnerAura & TEMPSPAWN_LINKED_AURA_OWNER_CHECK)
             {
-                // we have to check if owner still have the required aura
-                Unit* owner = GetMaster();
-                uint32 const& spellId = GetUInt32Value(UNIT_CREATED_BY_SPELL);
-                if (!owner || !spellId || !owner->HasAura(spellId))
+                if (!CheckAuraOnOwner())
                     UnSummon();
             }
             break;
@@ -208,14 +211,17 @@ void TemporarySpawn::Update(uint32 update_diff,  uint32 diff)
             break;
     }
 
-    Creature::Update(update_diff, diff);
+    Creature::Update(diff);
 }
 
 void TemporarySpawn::SetSummonProperties(TempSpawnType type, uint32 lifetime)
 {
     m_type = type;
-    m_timer = lifetime;
+    m_expirationTimestamp = GetMap()->GetCurrentClockTime() + std::chrono::milliseconds(lifetime);
     m_lifetime = lifetime;
+
+    // set month as re spawn delay to avoid it
+    m_respawnDelay = MONTH;
 }
 
 void TemporarySpawn::Summon(TempSpawnType type, uint32 lifetime)
@@ -229,7 +235,7 @@ void TemporarySpawn::Summon(TempSpawnType type, uint32 lifetime)
 
 void TemporarySpawn::UnSummon()
 {
-    CombatStop();
+    UnsummonCleanup();
 
     if (m_linkedToOwnerAura & TEMPSPAWN_LINKED_AURA_REMOVE_OWNER)
         RemoveAuraFromOwner();
@@ -240,10 +246,6 @@ void TemporarySpawn::UnSummon()
             if (sum->AI())
                 sum->AI()->SummonedCreatureDespawn(this);
     }
-    else if (GetSpawnerGuid().IsPlayer()) // if player that summoned this creature was MCing it, uncharm
-        if (Player* player = GetMap()->GetPlayer(GetSpawnerGuid()))
-            if (player->GetMover() == this)
-                player->Uncharm();
 
     if (AI())
         AI()->SummonedCreatureDespawn(this);
@@ -251,27 +253,35 @@ void TemporarySpawn::UnSummon()
     AddObjectToRemoveList();
 }
 
+bool TemporarySpawn::CheckAuraOnOwner()
+{
+    if (uint32 spellId = GetUInt32Value(UNIT_CREATED_BY_SPELL))
+    {
+        if (Unit* spawner = GetSpawner())
+           return spawner->HasAura(spellId);
+    }
+    return false;
+}
+
 void TemporarySpawn::RemoveAuraFromOwner()
 {
-    // creature is dead and we have to remove the charmer aura if exist
-    uint32 const& spellId = GetUInt32Value(UNIT_CREATED_BY_SPELL);
-    if (spellId)
+    if (uint32 spellid = GetUInt32Value(UNIT_CREATED_BY_SPELL))
     {
-
-        if (Unit* charmer = GetCharmer())
-        {
-            charmer->RemoveAurasDueToSpell(spellId);
-            charmer->ResetControlState(false);
-        }
-        else if (Unit* owner = GetOwner())
-        {
-            owner->RemoveAurasDueToSpell(spellId);
-        }
+        if (Unit* spawner = GetSpawner())
+            spawner->RemoveAurasDueToSpell(spellid);
     }
 }
 
 void TemporarySpawn::SaveToDB()
 {
+}
+
+bool TemporarySpawn::IsExpired() const
+{
+    auto now = GetMap()->GetCurrentClockTime();
+    if (now >= m_expirationTimestamp)
+        return true;
+    return false;
 }
 
 TemporarySpawnWaypoint::TemporarySpawnWaypoint(ObjectGuid summoner, uint32 waypoint_id, int32 path_id, uint32 pathOrigin) :

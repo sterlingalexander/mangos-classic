@@ -34,7 +34,7 @@ class Totem : public Creature
         explicit Totem();
         virtual ~Totem() {}
         bool Create(uint32 guidlow, CreatureCreatePos& cPos, CreatureInfo const* cinfo, Unit* owner);
-        void Update(uint32 update_diff, uint32 time) override;
+        void Update(const uint32 diff) override;
         void Summon(Unit* owner);
         void UnSummon();
         uint32 GetSpell() const { return m_spells[0]; }
@@ -42,6 +42,8 @@ class Totem : public Creature
         TotemType GetTotemType() const { return m_type; }
         void SetTypeBySummonSpell(SpellEntry const* spellProto);
         void SetDuration(uint32 dur) { m_duration = dur; }
+
+        Player* GetSpellModOwner() const override;
 
         float GetCritChance(WeaponAttackType attackType) const override;
         float GetCritChance(SpellSchoolMask schoolMask) const override;

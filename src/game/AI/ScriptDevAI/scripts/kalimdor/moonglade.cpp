@@ -17,13 +17,13 @@
 /* ScriptData
 SDName: Moonglade
 SD%Complete: 100
-SDComment: Quest support: 8736, 10965.
+SDComment: Quest support: 8736, 8868, 10965.
 SDCategory: Moonglade
 EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+#include "AI/ScriptDevAI/include/precompiled.h"/* ContentData
 npc_keeper_remulos
 boss_eranikus
 EndContentData */
@@ -31,6 +31,7 @@ EndContentData */
 
 #include "AI/ScriptDevAI/base/escort_ai.h"
 #include "Globals/ObjectMgr.h"
+#include "AI/ScriptDevAI/scripts/world/world_map_scripts.h"
 
 /*######
 ## npc_keeper_remulos
@@ -322,7 +323,7 @@ struct npc_keeper_remulosAI : public npc_escortAI, private DialogueHelper
     void DoHandleOutro(Creature* pTarget)
     {
         if (Player* pPlayer = GetPlayerForEscort())
-            pPlayer->GroupEventHappens(QUEST_NIGHTMARE_MANIFESTS, pTarget);
+            pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_NIGHTMARE_MANIFESTS, pTarget);
 
         m_uiOutroTimer = 3000;
     }
@@ -446,7 +447,7 @@ struct npc_keeper_remulosAI : public npc_escortAI, private DialogueHelper
     }
 };
 
-CreatureAI* GetAI_npc_keeper_remulos(Creature* pCreature)
+UnitAI* GetAI_npc_keeper_remulos(Creature* pCreature)
 {
     return new npc_keeper_remulosAI(pCreature);
 }
@@ -540,7 +541,6 @@ struct boss_eranikusAI : public ScriptedAI
         if (m_creature->GetHealthPercent() < 20.0f)
         {
             m_creature->RemoveAllAurasOnEvade();
-            m_creature->DeleteThreatList();
             m_creature->CombatStop(true);
             m_creature->LoadCreatureAddon(true);
 
@@ -825,9 +825,27 @@ struct boss_eranikusAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_eranikus(Creature* pCreature)
+UnitAI* GetAI_boss_eranikus(Creature* pCreature)
 {
     return new boss_eranikusAI(pCreature);
+}
+
+/*######
+## go_omen_cluster
+######*/
+
+bool GOUse_go_omen_cluster(Player* /*pPlayer*/, GameObject* pGo)
+{
+    ScriptedInstance* pInstance = (ScriptedInstance*)pGo->GetInstanceData();
+
+    if (!pInstance)
+        return false;
+
+    // Omen encounter is set to NOT_STARTED every time the GO cluster is used
+    // This increases an internal counter that handles the event in the map script
+    pInstance->SetData(TYPE_OMEN, NOT_STARTED);
+
+    return true;
 }
 
 void AddSC_moonglade()
@@ -844,5 +862,10 @@ void AddSC_moonglade()
     pNewScript = new Script;
     pNewScript->Name = "boss_eranikus";
     pNewScript->GetAI = &GetAI_boss_eranikus;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "go_omen_cluster";
+    pNewScript->pGOUse = &GOUse_go_omen_cluster;
     pNewScript->RegisterSelf();
 }

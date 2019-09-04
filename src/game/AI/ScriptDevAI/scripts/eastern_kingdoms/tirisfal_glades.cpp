@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+#include "AI/ScriptDevAI/include/precompiled.h"/* ContentData
 go_mausoleum_door
 go_mausoleum_trigger
 npc_calvin_montague
@@ -81,7 +81,7 @@ bool GOUse_go_mausoleum_trigger(Player* pPlayer, GameObject* pGo)
 enum
 {
     SAY_COMPLETE        = -1000356,
-    SPELL_DRINK         = 2639,                             // possibly not correct spell (but iconId is correct)
+    SPELL_DRINK_SD      = 2639,                             // possibly not correct spell (but iconId is correct)
     QUEST_590           = 590,
     FACTION_HOSTILE     = 168
 };
@@ -101,24 +101,19 @@ struct npc_calvin_montagueAI : public ScriptedAI
     {
         m_uiPhase = 0;
         m_uiPhaseTimer = 5000;
+        SetReactState(REACT_AGGRESSIVE);
+        m_creature->SetImmuneToPlayer(true);
         m_playerGuid.Clear();
     }
 
-    void AttackedBy(Unit* pAttacker) override
+    void DamageTaken(Unit* pDoneBy, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
-        if (m_creature->getVictim() || m_creature->IsFriendlyTo(pAttacker))
-            return;
-
-        AttackStart(pAttacker);
-    }
-
-    void DamageTaken(Unit* pDoneBy, uint32& uiDamage, DamageEffectType /*damagetype*/) override
-    {
-        if (uiDamage > m_creature->GetHealth() || ((m_creature->GetHealth() - uiDamage) * 100 / m_creature->GetMaxHealth() < 15))
+        if (damage > m_creature->GetHealth() || ((m_creature->GetHealth() - damage) * 100 / m_creature->GetMaxHealth() < 15))
         {
-            uiDamage = 0;
+            damage = std::min(damage, m_creature->GetHealth() - 1);
 
             m_creature->CombatStop(true);
+            SetReactState(REACT_PASSIVE);
 
             m_uiPhase = 1;
 
@@ -149,7 +144,7 @@ struct npc_calvin_montagueAI : public ScriptedAI
                     if (Player* pPlayer = m_creature->GetMap()->GetPlayer(m_playerGuid))
                         pPlayer->AreaExploredOrEventHappens(QUEST_590);
 
-                    m_creature->CastSpell(m_creature, SPELL_DRINK, TRIGGERED_OLD_TRIGGERED);
+                    m_creature->CastSpell(m_creature, SPELL_DRINK_SD, TRIGGERED_OLD_TRIGGERED);
                     ++m_uiPhase;
                     break;
                 case 3:
@@ -167,7 +162,7 @@ struct npc_calvin_montagueAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_calvin_montague(Creature* pCreature)
+UnitAI* GetAI_npc_calvin_montague(Creature* pCreature)
 {
     return new npc_calvin_montagueAI(pCreature);
 }
@@ -176,6 +171,7 @@ bool QuestAccept_npc_calvin_montague(Player* pPlayer, Creature* pCreature, const
 {
     if (pQuest->GetQuestId() == QUEST_590)
     {
+        pCreature->SetImmuneToPlayer(false);
         pCreature->SetFactionTemporary(FACTION_HOSTILE, TEMPFACTION_RESTORE_COMBAT_STOP | TEMPFACTION_RESTORE_RESPAWN);
         pCreature->AI()->AttackStart(pPlayer);
     }
@@ -184,9 +180,7 @@ bool QuestAccept_npc_calvin_montague(Player* pPlayer, Creature* pCreature, const
 
 void AddSC_tirisfal_glades()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "go_mausoleum_door";
     pNewScript->pGOUse = &GOUse_go_mausoleum_door;
     pNewScript->RegisterSelf();

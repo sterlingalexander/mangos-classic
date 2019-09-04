@@ -55,13 +55,10 @@ void CreatureEventAIMgr::CheckUnusedAITexts()
 
     for (CreatureEventAI_Event_Map::const_iterator itr = m_CreatureEventAI_Event_Map.begin(); itr != m_CreatureEventAI_Event_Map.end(); ++itr)
     {
-        for (size_t i = 0; i < itr->second.size(); ++i)
+        for (const auto& event : itr->second)
         {
-            CreatureEventAI_Event const& event = itr->second[i];
-
-            for (int j = 0; j < MAX_ACTIONS; ++j)
+            for (auto action : event.action)
             {
-                CreatureEventAI_Action const& action = event.action[j];
                 switch (action.type)
                 {
                     case ACTION_T_TEXT:
@@ -86,8 +83,8 @@ void CreatureEventAIMgr::CheckUnusedAITexts()
 
     sScriptMgr.CheckRandomStringTemplates(idx_set);
 
-    for (std::set<int32>::const_iterator itr = idx_set.begin(); itr != idx_set.end(); ++itr)
-        sLog.outErrorEventAI("Entry %i in table `creature_ai_texts` but not used in EventAI scripts.", *itr);
+    for (int32 itr : idx_set)
+    sLog.outErrorEventAI("Entry %i in table `creature_ai_texts` but not used in EventAI scripts.", itr);
 }
 
 // -------------------
@@ -155,13 +152,10 @@ void CreatureEventAIMgr::CheckUnusedAISummons()
 
     for (CreatureEventAI_Event_Map::const_iterator itr = m_CreatureEventAI_Event_Map.begin(); itr != m_CreatureEventAI_Event_Map.end(); ++itr)
     {
-        for (size_t i = 0; i < itr->second.size(); ++i)
+        for (const auto& event : itr->second)
         {
-            CreatureEventAI_Event const& event = itr->second[i];
-
-            for (int j = 0; j < MAX_ACTIONS; ++j)
+            for (auto action : event.action)
             {
-                CreatureEventAI_Action const& action = event.action[j];
                 switch (action.type)
                 {
                     case ACTION_T_SUMMON_ID:
@@ -176,8 +170,8 @@ void CreatureEventAIMgr::CheckUnusedAISummons()
         }
     }
 
-    for (std::set<int32>::const_iterator itr = idx_set.begin(); itr != idx_set.end(); ++itr)
-        sLog.outErrorEventAI("Entry %i in table `creature_ai_summons` but not used in EventAI scripts.", *itr);
+    for (int32 itr : idx_set)
+    sLog.outErrorEventAI("Entry %i in table `creature_ai_summons` but not used in EventAI scripts.", itr);
 }
 
 /// Helper function to check if a target-type is suitable for the event-type
@@ -229,6 +223,7 @@ bool IsValidTargetType(EventAI_Type eventType, EventAI_ActionType actionType, ui
                 case EVENT_T_FRIENDLY_MISSING_BUFF:
                 case EVENT_T_RECEIVE_EMOTE:
                 case EVENT_T_RECEIVE_AI_EVENT:
+                case EVENT_T_SPELLHIT_TARGET:
                     return true;
                 default:
                     sLog.outErrorEventAI("Event %u Action%u uses incorrect Target type %u for event-type %u", eventId, action, targetType, eventType);
@@ -245,6 +240,10 @@ bool IsValidTargetType(EventAI_Type eventType, EventAI_ActionType actionType, ui
         case TARGET_T_EVENT_SPECIFIC:
         case TARGET_T_PLAYER_INVOKER:
         case TARGET_T_PLAYER_TAPPED:
+        case TARGET_T_NONE:
+        case TARGET_T_HOSTILE_RANDOM_MANA:
+        case TARGET_T_NEAREST_AOE_TARGET:
+        case TARGET_T_HOSTILE_FARTHEST_AWAY:
             return true;
         default:
             sLog.outErrorEventAI("Event %u Action%u uses incorrect Target type", eventId, action);
@@ -261,11 +260,11 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
 
     // Gather event data
     QueryResult* result = WorldDatabase.Query("SELECT id, creature_id, event_type, event_inverse_phase_mask, event_chance, event_flags, "
-                          "event_param1, event_param2, event_param3, event_param4, "
+                          "event_param1, event_param2, event_param3, event_param4, event_param5, event_param6, "
                           "action1_type, action1_param1, action1_param2, action1_param3, "
                           "action2_type, action2_param1, action2_param2, action2_param3, "
                           "action3_type, action3_param1, action3_param2, action3_param3 "
-                          "FROM creature_ai_scripts");
+                          "FROM creature_ai_scripts ORDER BY id");
     if (result)
     {
         BarGoLink bar(result->GetRowCount());
@@ -294,11 +293,9 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
 
             temp.event_inverse_phase_mask = fields[3].GetUInt32();
             temp.event_chance = fields[4].GetUInt8();
-            temp.event_flags  = fields[5].GetUInt8();
-            temp.raw.param1 = fields[6].GetUInt32();
-            temp.raw.param2 = fields[7].GetUInt32();
-            temp.raw.param3 = fields[8].GetUInt32();
-            temp.raw.param4 = fields[9].GetUInt32();
+            temp.event_flags  = fields[5].GetUInt32();
+            for (uint32 i = 0; i < 6; ++i)
+                temp.raw.params[i] = fields[6 + i].GetUInt32();
 
             // Creature does not exist in database
             if (!sCreatureStorage.LookupEntry<CreatureInfo>(temp.creature_id))
@@ -372,6 +369,12 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                         sLog.outErrorEventAI("Creature %u are using repeatable event(%u) with param4 < param3 (RepeatMax < RepeatMin). Event will never repeat.", temp.creature_id, i);
                     break;
                 case EVENT_T_OOC_LOS:
+                    if (temp.ooc_los.conditionId && !sConditionStorage.LookupEntry<PlayerCondition>(temp.ooc_los.conditionId))
+                    {
+                        sLog.outErrorDb("Creature %u has `ConditionId` = %u but does not exist. Setting ConditionId to 0 for event %u.", temp.creature_id, temp.ooc_los.conditionId, i);
+                        temp.ooc_los.conditionId = 0;
+                    }
+
                     if (temp.ooc_los.repeatMax < temp.ooc_los.repeatMin)
                         sLog.outErrorEventAI("Creature %u are using repeatable event(%u) with param4 < param3 (RepeatMax < RepeatMin). Event will never repeat.", temp.creature_id, i);
                     break;
@@ -459,6 +462,12 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                         temp.event_flags &= ~EFLAG_REPEATABLE;
                     }
 
+                    if (temp.event_flags & EFLAG_COMBAT_ACTION)
+                    {
+                        sLog.outErrorEventAI("Creature %u has EFLAG_COMBAT_ACTION set. Event can never be done during combat. Removing flag for event %u.", temp.creature_id, i);
+                        temp.event_flags &= ~EFLAG_COMBAT_ACTION;
+                    }
+
                     break;
                 }
 
@@ -470,9 +479,10 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                         continue;
                     }
 
-                    if (!PlayerCondition::IsValid(0, ConditionType(temp.receive_emote.condition), temp.receive_emote.conditionValue1, temp.receive_emote.conditionValue2))
+                    if (temp.receive_emote.conditionId && !sConditionStorage.LookupEntry<PlayerCondition>(temp.receive_emote.conditionId))
                     {
-                        sLog.outErrorEventAI("Creature %u using event %u: param2 (Condition: %u) are not valid.", temp.creature_id, i, temp.receive_emote.condition);
+                        sLog.outErrorDb("Creature %u has `ConditionId` = %u but does not exist. Setting ConditionId to 0 for event %u.", temp.creature_id, temp.receive_emote.conditionId, i);
+                        temp.receive_emote.conditionId = 0;
                         continue;
                     }
 
@@ -530,6 +540,47 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                     }
                     break;
                 }
+                case EVENT_T_FACING_TARGET:
+                {
+                    // Position is invalid (0:in back, 1:in front)
+                    if (temp.facingTarget.backOrFront && temp.facingTarget.backOrFront != 1)
+                    {
+                        sLog.outErrorEventAI("Event %u has unfitting value (%u) for param1 in event EVENT_T_FACING_TARGET (must be 0 or 1), skipping.", i, temp.facingTarget.backOrFront);
+                        continue;
+                    }
+                    // Event has repeatable flag but no timer
+                    if (temp.event_flags & EFLAG_REPEATABLE && !temp.facingTarget.repeatMin && !temp.facingTarget.repeatMax)
+                    {
+                        sLog.outErrorEventAI("Creature %u has param3 and param4=0 (RepeatMin/RepeatMax) but cannot be repeatable without timers. Removing EFLAG_REPEATABLE for event %u.", temp.creature_id, i);
+                        temp.event_flags &= ~EFLAG_REPEATABLE;
+                    }
+                    // Event has repeatable flag but timer is invalid
+                    if (temp.event_flags & EFLAG_REPEATABLE && temp.facingTarget.repeatMax < temp.facingTarget.repeatMin)
+                        sLog.outErrorEventAI("Creature %u is using repeatable event(%u) with param4 < param3 (RepeatMax < RepeatMin). Event will never repeat.", temp.creature_id, i);
+                    break;
+                }
+                case EVENT_T_SPELLHIT_TARGET:
+                    if (temp.spell_hit_target.spellId)
+                    {
+                        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(temp.spell_hit_target.spellId);
+                        if (!spellInfo)
+                        {
+                            sLog.outErrorEventAI("Creature %u has nonexistent SpellID(%u) defined in event %u.", temp.creature_id, temp.spell_hit_target.spellId, i);
+                            continue;
+                        }
+
+                        if ((temp.spell_hit_target.schoolMask & GetSchoolMask(spellInfo->School)) != GetSchoolMask(spellInfo->School))
+                            sLog.outErrorEventAI("Creature %u has param1(spellId %u) but param2 is not -1 and not equal to spell's school mask. Event %u can never trigger.", temp.creature_id, temp.spell_hit.schoolMask, i);
+                    }
+
+                    if (!temp.spell_hit_target.schoolMask)
+                        sLog.outErrorEventAI("Creature %u is using invalid SpellSchoolMask(%u) defined in event %u.", temp.creature_id, temp.spell_hit_target.schoolMask, i);
+
+                    if (temp.spell_hit_target.repeatMax < temp.spell_hit_target.repeatMin)
+                        sLog.outErrorEventAI("Creature %u are using repeatable event(%u) with param4 < param3 (RepeatMax < RepeatMin). Event will never repeat.", temp.creature_id, i);
+                    break;
+                case EVENT_T_DEATH_PREVENTED:
+                    break;
                 default:
                     sLog.outErrorEventAI("Creature %u using not checked at load event (%u) in event %u. Need check code update?", temp.creature_id, temp.event_id, i);
                     break;
@@ -537,7 +588,7 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
 
             for (uint32 j = 0; j < MAX_ACTIONS; ++j)
             {
-                uint16 action_type = fields[10 + (j * 4)].GetUInt16();
+                uint16 action_type = fields[12 + (j * 4)].GetUInt16();
                 if (action_type >= ACTION_T_END)
                 {
                     sLog.outErrorEventAI("Event %u Action %u has incorrect action type (%u), replace by ACTION_T_NONE.", i, j + 1, action_type);
@@ -548,9 +599,9 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                 CreatureEventAI_Action& action = temp.action[j];
 
                 action.type = EventAI_ActionType(action_type);
-                action.raw.param1 = fields[11 + (j * 4)].GetUInt32();
-                action.raw.param2 = fields[12 + (j * 4)].GetUInt32();
-                action.raw.param3 = fields[13 + (j * 4)].GetUInt32();
+                action.raw.param1 = fields[13 + (j * 4)].GetUInt32();
+                action.raw.param2 = fields[14 + (j * 4)].GetUInt32();
+                action.raw.param3 = fields[15 + (j * 4)].GetUInt32();
 
                 // Report any errors in actions
                 switch (action.type)
@@ -690,6 +741,12 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                             if (spell->HasAttribute(SPELL_ATTR_EX3_TARGET_ONLY_PLAYER) &&
                                     (action.cast.target == TARGET_T_ACTION_INVOKER || action.cast.target == TARGET_T_HOSTILE_RANDOM || action.cast.target == TARGET_T_HOSTILE_RANDOM_NOT_TOP))
                                 sLog.outErrorEventAI("Event %u Action %u uses Target type %u for a spell (%u) that should only target players. This could be wrong.", i, j + 1, action.cast.target, action.cast.spellId);
+
+                            if (spell->Targets != 0 && (action.cast.target == TARGET_T_NONE || action.cast.target == TARGET_T_NEAREST_AOE_TARGET))
+                            {
+                                sLog.outErrorEventAI("Event %u Action %u uses Target type %u for a spell (%u) that needs target for casting. Resetting it to TARGET_T_HOSTILE.", i, j + 1, action.cast.target, action.cast.spellId);
+                                action.cast.target = TARGET_T_HOSTILE;
+                            }
                         }
                         break;
                     }
@@ -699,10 +756,10 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
 
                         IsValidTargetType(temp.event_type, action.type, action.summon.target, i, j + 1);
                         break;
-                    case ACTION_T_THREAT_SINGLE_PCT:
-                        if (std::abs(action.threat_single_pct.percent) > 100)
-                            sLog.outErrorEventAI("Event %u Action %u uses invalid percent value %u.", i, j + 1, action.threat_single_pct.percent);
-                        IsValidTargetType(temp.event_type, action.type, action.threat_single_pct.target, i, j + 1);
+                    case ACTION_T_THREAT_SINGLE:
+                        if (std::abs(action.threat_single.value) > 100 && !action.threat_single.isDirect)
+                            sLog.outErrorEventAI("Event %u Action %u uses invalid percent value %u.", i, j + 1, action.threat_single.value);
+                        IsValidTargetType(temp.event_type, action.type, action.threat_single.target, i, j + 1);
                         break;
                     case ACTION_T_THREAT_ALL_PCT:
                         if (std::abs(action.threat_all_pct.percent) > 100)
@@ -815,14 +872,11 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                             action.set_sheath.sheath = SHEATH_STATE_UNARMED;
                         }
                         break;
-                    case ACTION_T_SET_INVINCIBILITY_HP_LEVEL:
-                        if (action.invincibility_hp_level.is_percent)
+                    case ACTION_T_SET_DEATH_PREVENTION:
+                        if (action.deathPrevention.state > 1)
                         {
-                            if (action.invincibility_hp_level.hp_level > 100)
-                            {
-                                sLog.outErrorEventAI("Event %u Action %u uses wrong percent value %u.", i, j + 1, action.invincibility_hp_level.hp_level);
-                                action.invincibility_hp_level.hp_level = 100;
-                            }
+                            sLog.outErrorEventAI("Event %u Action %u uses invalid death prevention state %u. Setting to 1.", i, j + 1, action.deathPrevention.state);
+                            action.deathPrevention.state = 1;
                         }
                         break;
                     case ACTION_T_MOUNT_TO_ENTRY_OR_MODEL:
@@ -858,7 +912,6 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                     case ACTION_T_COMBAT_MOVEMENT:          // AllowCombatMovement (0 = stop combat based movement, anything else continue attacking)
                     case ACTION_T_RANGED_MOVEMENT:          // Distance, Angle
                     case ACTION_T_CALL_FOR_HELP:            // Distance
-                    case ACTION_T_DYNAMIC_MOVEMENT:         // EnableDynamicMovement (1 = on; 0 = off)
                         break;
 
                     case ACTION_T_RANDOM_SAY:
@@ -873,7 +926,7 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                             sLog.outErrorEventAI("Event %u Action %u uses invalid event type %u (must be less than %u), skipping", i, j + 1, action.throwEvent.eventType, MAXIMAL_AI_EVENT_EVENTAI);
                             continue;
                         }
-                        if (action.throwEvent.radius > SIZE_OF_GRIDS)
+                        if (action.throwEvent.radius > (uint32)SIZE_OF_GRIDS)
                             sLog.outErrorEventAI("Event %u Action %u uses unexpectedly huge radius %u (expected to be less than %f)", i, j + 1, action.throwEvent.radius, SIZE_OF_GRIDS);
 
                         if (action.throwEvent.radius == 0)
@@ -887,28 +940,29 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                         if (action.setThrowMask.eventTypeMask & ~((1 << MAXIMAL_AI_EVENT_EVENTAI) - 1))
                         {
                             sLog.outErrorEventAI("Event %u Action %u uses invalid AIEvent-typemask %u (must be smaller than %u)", i, j + 1, action.setThrowMask.eventTypeMask, MAXIMAL_AI_EVENT_EVENTAI << 1);
-                            continue;
                         }
                         break;
                     case ACTION_T_SET_STAND_STATE:
                         if (action.setStandState.standState >= MAX_UNIT_STAND_STATE)
                         {
                             sLog.outErrorEventAI("Event %u Action %u uses invalid unit stand state %u (must be smaller than %u)", i, j + 1, action.setStandState.standState, MAX_UNIT_STAND_STATE);
-                            continue;
                         }
                         break;
                     case ACTION_T_CHANGE_MOVEMENT:
                         if (action.changeMovement.movementType >= MAX_DB_MOTION_TYPE)
                         {
                             sLog.outErrorEventAI("Event %u Action %u uses invalid movement type %u (must be smaller than %u)", i, j + 1, action.changeMovement.movementType, MAX_DB_MOTION_TYPE);
-                            continue;
+                        }
+                        if (action.changeMovement.asDefault > 1)
+                        {
+                            sLog.outErrorEventAI("Event %u Action %u uses invalid default movement setting %u. Setting to 0.", i, j + 1, action.changeMovement.asDefault);
+                            action.deathPrevention.state = 0;
                         }
                         break;
                     case ACTION_T_SET_REACT_STATE:
                         if (action.setReactState.reactState > REACT_AGGRESSIVE)
                         {
                             sLog.outErrorEventAI("Event %u Action %u uses invalid react state %u (must be smaller than %u)", i, j + 1, action.setReactState.reactState, REACT_AGGRESSIVE);
-                            continue;
                         }
                         break;
                     case ACTION_T_PAUSE_WAYPOINTS:
@@ -917,7 +971,6 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                         if (action.interruptSpell.currentSpellType >= CURRENT_MAX_SPELL)
                         {
                             sLog.outErrorEventAI("Event %u Action %u uses invalid current spell type %u (must be smaller or equal to %u)", i, j + 1, action.interruptSpell.currentSpellType, CURRENT_MAX_SPELL - 1);
-                            continue;
                         }
                         break;
                     case ACTION_T_START_RELAY_SCRIPT:
@@ -926,7 +979,6 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                             if (sRelayScripts.second.find(action.relayScript.relayId) == sRelayScripts.second.end())
                             {
                                 sLog.outErrorEventAI("Event %u Action %u references invalid dbscript_on_relay id %u", i, j + 1, action.relayScript.relayId);
-                                continue;
                             }
                         }
                         else
@@ -956,14 +1008,11 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                                 sLog.outErrorEventAI("Event %u Action %u references non-existing entry for text template (%i) in dbscript_random_templates table.", i, j + 1, action.textNew.textId);
                                 break;
                             }
-                            else
-                            {
-                                ScriptMgr::ScriptTemplateVector templateData;
-                                sScriptMgr.GetScriptStringTemplate(action.textNew.templateId, templateData);
-                                for(auto& data : templateData)
-                                    if(data.first)
-                                        usedTextIds.insert(data.first);
-                            }
+                            ScriptMgr::ScriptTemplateVector templateData;
+                            sScriptMgr.GetScriptStringTemplate(action.textNew.templateId, templateData);
+                            for (auto& data : templateData)
+                                if (data.first)
+                                    usedTextIds.insert(data.first);
                         }
                         break;
                     case ACTION_T_ATTACK_START:
@@ -976,6 +1025,41 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
                             action.despawnGuardians.entryId = 0;
                         }
                         break;
+                    case ACTION_T_SET_RANGED_MODE:
+                        if (action.rangedMode.type >= TYPE_MAX)
+                        {
+                            sLog.outErrorEventAI("Event %u Action %u uses nonexistent ranged mode type %u. Setting to 0.", i, j + 1, action.rangedMode.type);
+                            action.rangedMode.type = 0;
+                        }
+                        if (action.rangedMode.chaseDistance > 200)
+                        {
+                            sLog.outErrorEventAI("Event %u Action %u uses too large chase distance %u. Setting to 30.", i, j + 1, action.rangedMode.chaseDistance);
+                            action.rangedMode.chaseDistance = 30;
+                        }
+                        break;
+                    case ACTION_T_SET_WALK:
+                        switch (action.walkSetting.type)
+                        {
+                            case WALK_DEFAULT:
+                            case RUN_DEFAULT:
+                            case WALK_CHASE:
+                            case RUN_CHASE:
+                                break; // correct values
+                            default:
+                                sLog.outErrorEventAI("Event %u Action %u uses invalid walking mode %u. Setting to RUN_DEFAULT.", i, j + 1, action.walkSetting.type);
+                                action.walkSetting.type = RUN_DEFAULT;
+                                break;
+                        }
+                        break;
+                    case ACTION_T_SET_FACING:
+                        if (action.setFacing.reset > 1)
+                        {
+                            sLog.outErrorEventAI("Event %u Action %u uses invalid facing setting %u. Setting to 0.", i, j + 1, action.setFacing.reset);
+                            action.setFacing.reset = 0;
+                            break;
+                        }
+                        IsValidTargetType(temp.event_type, action.type, action.setFacing.target, i, j + 1);
+                        break;
                     default:
                         sLog.outErrorEventAI("Event %u Action %u have currently not checked at load action type (%u). Need check code update?", i, j + 1, temp.action[j].type);
                         break;
@@ -985,6 +1069,29 @@ void CreatureEventAIMgr::LoadCreatureEventAI_Scripts()
             // Add to list
             m_CreatureEventAI_Event_Map[creature_id].push_back(temp);
             ++Count;
+
+            switch (temp.event_type)
+            {
+                case EVENT_T_FRIENDLY_HP:
+                {
+                    // compute data at the end
+                    CreatureEventAI_EventComputedData data;
+                    data.friendlyHp.targetSelf = true;
+                    for (uint32 j = 0; j < MAX_ACTIONS; ++j)
+                    {
+                        CreatureEventAI_Action& action = temp.action[j];
+                        if (temp.action[j].type == ACTION_T_CAST && temp.action[j].cast.target == TARGET_T_EVENT_SPECIFIC)
+                        {
+                            SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(temp.action[j].cast.spellId);
+                            if (spellInfo->HasAttribute(SPELL_ATTR_EX_CANT_TARGET_SELF))
+                                data.friendlyHp.targetSelf = false;
+                        }
+                    }
+                    m_creatureEventAI_ComputedDataMap.emplace(temp.event_id, data);
+                    break;
+                }
+                default: break;
+            }
         }
         while (result->NextRow());
 

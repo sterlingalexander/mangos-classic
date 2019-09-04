@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "zulgurub.h"
 
 enum
@@ -74,15 +74,15 @@ struct boss_thekalBaseAI : public ScriptedAI
     virtual void OnFakeingDeath() {}
     virtual void OnRevive() {}
 
-    void DamageTaken(Unit* /*pKiller*/, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    void DamageTaken(Unit* /*pKiller*/, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
-        if (uiDamage < m_creature->GetHealth())
+        if (damage < m_creature->GetHealth())
             return;
 
         // Prevent glitch if in fake death
         if (m_uiPhase == PHASE_FAKE_DEATH || m_uiPhase == PHASE_WAITING)
         {
-            uiDamage = 0;
+            damage = 0;
             return;
         }
 
@@ -90,7 +90,7 @@ struct boss_thekalBaseAI : public ScriptedAI
         if (m_uiPhase != PHASE_NORMAL)
             return;
 
-        uiDamage = 0;
+        damage = std::min(damage, m_creature->GetHealth() - 1);
 
         m_creature->InterruptNonMeleeSpells(true);
         m_creature->SetHealth(0);
@@ -206,7 +206,7 @@ struct boss_thekalAI : public boss_thekalBaseAI
     }
 
     // Only call in context where m_pInstance is valid
-    bool CanPreventAddsResurrect()
+    bool CanPreventAddsResurrect() const
     {
         // If any add is alive, return false
         if (m_pInstance->GetData(TYPE_ZATH) != SPECIAL || m_pInstance->GetData(TYPE_LORKHAN) != SPECIAL)
@@ -277,7 +277,7 @@ struct boss_thekalAI : public boss_thekalBaseAI
                 else
                     m_uiResurrectTimer -= uiDiff;
 
-                // No break needed here
+            // No break needed here
             case PHASE_WAITING:
                 return;
 
@@ -427,21 +427,21 @@ struct mob_zealot_lorkhanAI : public boss_thekalBaseAI
                 else
                     m_uiResurrectTimer -= uiDiff;
 
-                // no break needed here
+            // no break needed here
             case PHASE_WAITING:
                 return;
 
             case PHASE_NORMAL:
                 if (m_uiDispelTimer < uiDiff)
                 {
-                    std::list<Creature*> pList = DoFindFriendlyCC(30.0f);
+                    CreatureList pList = DoFindFriendlyCC(30.0f);
 
                     Creature* dispelTarget = nullptr;
 
                     if (!pList.empty())
-                        for (std::list<Creature*>::iterator itr = pList.begin(); itr != pList.end(); ++itr)
+                        for (auto& itr : pList)
                         {
-                            dispelTarget = (*itr);
+                            dispelTarget = itr;
                             break;
                         }
 
@@ -580,7 +580,7 @@ struct mob_zealot_zathAI : public boss_thekalBaseAI
                 else
                     m_uiResurrectTimer -= uiDiff;
 
-                // no break needed here
+            // no break needed here
             case PHASE_WAITING:
                 return;
 
@@ -648,26 +648,24 @@ bool EffectDummyCreature_thekal_resurrection(Unit* /*pCaster*/, uint32 uiSpellId
     return false;
 }
 
-CreatureAI* GetAI_boss_thekal(Creature* pCreature)
+UnitAI* GetAI_boss_thekal(Creature* pCreature)
 {
     return new boss_thekalAI(pCreature);
 }
 
-CreatureAI* GetAI_mob_zealot_lorkhan(Creature* pCreature)
+UnitAI* GetAI_mob_zealot_lorkhan(Creature* pCreature)
 {
     return new mob_zealot_lorkhanAI(pCreature);
 }
 
-CreatureAI* GetAI_mob_zealot_zath(Creature* pCreature)
+UnitAI* GetAI_mob_zealot_zath(Creature* pCreature)
 {
     return new mob_zealot_zathAI(pCreature);
 }
 
 void AddSC_boss_thekal()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_thekal";
     pNewScript->GetAI = &GetAI_boss_thekal;
     pNewScript->pEffectDummyNPC = &EffectDummyCreature_thekal_resurrection;

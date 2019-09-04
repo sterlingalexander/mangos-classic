@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "blackrock_spire.h"
 
 enum
@@ -88,7 +88,7 @@ static const DialogueEntry aStadiumDialogue[] =
     {SAY_NEFARIUS_INTRO_1,      NPC_LORD_VICTOR_NEFARIUS,   7000},
     {SAY_NEFARIUS_INTRO_2,      NPC_LORD_VICTOR_NEFARIUS,   5000},
     {NPC_BLACKHAND_HANDLER,     0,                          0},
-    {SAY_NEFARIUS_LOSE1 ,       NPC_LORD_VICTOR_NEFARIUS,   3000},
+    {SAY_NEFARIUS_LOSE1,       NPC_LORD_VICTOR_NEFARIUS,   3000},
     {SAY_REND_ATTACK,           NPC_REND_BLACKHAND,         2000},
     {SAY_NEFARIUS_WARCHIEF,     NPC_LORD_VICTOR_NEFARIUS,   0},
     {SAY_NEFARIUS_VICTORY,      NPC_LORD_VICTOR_NEFARIUS,   5000},
@@ -102,13 +102,13 @@ instance_blackrock_spire::instance_blackrock_spire(Map* pMap) : ScriptedInstance
     m_bUpperDoorOpened(false),
     m_uiDragonspineDoorTimer(0),
     m_uiDragonspineGoCount(0),
+    m_bBeastIntroDone(false),
+    m_bBeastOutOfLair(false),
     m_uiFlamewreathEventTimer(0),
     m_uiFlamewreathWaveCount(0),
     m_uiStadiumEventTimer(0),
     m_uiStadiumWaves(0),
-    m_uiStadiumMobsAlive(0),
-    m_bBeastIntroDone(false),
-    m_bBeastOutOfLair(false)
+    m_uiStadiumMobsAlive(0)
 {
     Initialize();
 }
@@ -175,7 +175,7 @@ void instance_blackrock_spire::OnObjectCreate(GameObject* pGo)
         default:
             return;
     }
-    m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+    m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
 }
 
 void instance_blackrock_spire::OnCreatureCreate(Creature* pCreature)
@@ -189,7 +189,7 @@ void instance_blackrock_spire::OnCreatureCreate(Creature* pCreature)
         case NPC_REND_BLACKHAND:
         case NPC_SCARSHIELD_INFILTRATOR:
         case NPC_THE_BEAST:
-            m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
 
         case NPC_BLACKHAND_SUMMONER:
@@ -223,6 +223,7 @@ void instance_blackrock_spire::SetData(uint32 uiType, uint32 uiData)
                         if (!pIncarcerator->isAlive())
                             pIncarcerator->Respawn();
                         pIncarcerator->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                        pIncarcerator->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
                     }
                 }
 
@@ -318,10 +319,10 @@ void instance_blackrock_spire::Load(const char* chrIn)
     std::istringstream loadStream(chrIn);
     loadStream >> m_auiEncounter[0] >> m_auiEncounter[1] >> m_auiEncounter[2] >> m_auiEncounter[3] >> m_auiEncounter[4] >> m_auiEncounter[5];
 
-    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
+    for (uint32& i : m_auiEncounter)
     {
-        if (m_auiEncounter[i] == IN_PROGRESS)
-            m_auiEncounter[i] = NOT_STARTED;
+        if (i == IN_PROGRESS)
+            i = NOT_STARTED;
     }
 
     OUT_LOAD_INST_DATA_COMPLETE;
@@ -449,7 +450,7 @@ void instance_blackrock_spire::OnCreatureEvade(Creature* pCreature)
 {
     switch (pCreature->GetEntry())
     {
-            // Emberseer should evade if the incarcerators evade
+        // Emberseer should evade if the incarcerators evade
         case NPC_BLACKHAND_INCARCERATOR:
             if (Creature* pEmberseer = GetSingleCreatureFromStorage(NPC_PYROGUARD_EMBERSEER))
                 pEmberseer->AI()->EnterEvadeMode();
@@ -477,7 +478,7 @@ void instance_blackrock_spire::OnCreatureEnterCombat(Creature* pCreature)
 {
     switch (pCreature->GetEntry())
     {
-            // Once one of the Incarcerators gets Aggro, the door should close
+        // Once one of the Incarcerators gets Aggro, the door should close
         case NPC_BLACKHAND_INCARCERATOR:
             SetData(TYPE_EMBERSEER, IN_PROGRESS);
             break;
@@ -534,6 +535,7 @@ void instance_blackrock_spire::DoProcessEmberseerEvent()
             {
                 pCreature->InterruptNonMeleeSpells(false);
                 pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
             }
         }
     }
@@ -569,7 +571,7 @@ void instance_blackrock_spire::JustDidDialogueStep(int32 iEntry)
             {
                 pNefarius->GetMotionMaster()->MovePoint(0, aStadiumLocs[5].m_fX, aStadiumLocs[5].m_fY, aStadiumLocs[5].m_fZ);
                 // Summon the spectators and move them to the western balcony
-                for (uint8 i = 0; i <12; i++)
+                for (uint8 i = 0; i < 12; i++)
                 {
                     Creature* pSpectator = pNefarius->SummonCreature(aStadiumSpectators[i], aSpectatorsSpawnLocs[i].m_fX, aSpectatorsSpawnLocs[i].m_fY, aSpectatorsSpawnLocs[i].m_fZ, aSpectatorsSpawnLocs[i].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0);
                     if (pSpectator)
@@ -915,7 +917,7 @@ struct npc_rookery_hatcherAI : public ScriptedAI
 
     void Reset() override
     {
-        uiStrikeTimer           = urand(5000 ,7000);
+        uiStrikeTimer           = urand(5000, 7000);
         uiSunderArmorTimer      = 5000;
         uiDisturbEggsTimer      = urand(8000, 10000);
         uiWaitTimer             = 0;
@@ -939,7 +941,7 @@ struct npc_rookery_hatcherAI : public ScriptedAI
     // Function to search for new rookery egg in range
     void DoFindNewEgg()
     {
-        std::list<GameObject*> lEggsInRange;
+        GameObjectList lEggsInRange;
         GetGameObjectListWithEntryInGrid(lEggsInRange, m_creature, GO_ROOKERY_EGG, 20.0f);
 
         if (lEggsInRange.empty())   // No GO found
@@ -949,7 +951,7 @@ struct npc_rookery_hatcherAI : public ScriptedAI
         GameObject* pNearestEgg = nullptr;
 
         // Always need to find new ones
-        for (std::list<GameObject*>::const_iterator itr = lEggsInRange.begin(); itr != lEggsInRange.end(); ++itr)
+        for (GameObjectList::const_iterator itr = lEggsInRange.begin(); itr != lEggsInRange.end(); ++itr)
         {
             if (!((*itr)->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE)))
             {
@@ -1016,16 +1018,14 @@ struct npc_rookery_hatcherAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_rookery_hatcher(Creature* pCreature)
+UnitAI* GetAI_npc_rookery_hatcher(Creature* pCreature)
 {
     return new npc_rookery_hatcherAI(pCreature);
 }
 
 void AddSC_instance_blackrock_spire()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "instance_blackrock_spire";
     pNewScript->GetInstanceData = &GetInstanceData_instance_blackrock_spire;
     pNewScript->RegisterSelf();

@@ -33,65 +33,31 @@ int TotemAI::Permissible(const Creature* creature)
     return PERMIT_BASE_NO;
 }
 
-TotemAI::TotemAI(Creature* c) : CreatureEventAI(c)
+TotemAI::TotemAI(Creature* creature) : CreatureEventAI(creature)
 {
 }
 
-void TotemAI::MoveInLineOfSight(Unit*)
+void TotemAI::MoveInLineOfSight(Unit* /*who*/)
 {
 }
 
 void TotemAI::EnterEvadeMode()
 {
-    m_creature->CombatStop(true);
+    m_creature->CombatStopWithPets(true);
 
     // Handle Evade events
-    for (CreatureEventAIList::iterator i = m_CreatureEventAIList.begin(); i != m_CreatureEventAIList.end(); ++i)
+    IncreaseDepthIfNecessary();
+    for (auto& i : m_CreatureEventAIList)
     {
-        if (i->Event.event_type == EVENT_T_EVADE)
-            ProcessEvent(*i);
+        if (i.event.event_type == EVENT_T_EVADE)
+            CheckAndReadyEventForExecution(i);
     }
+    ProcessEvents();
 }
 
 void TotemAI::UpdateAI(const uint32 diff)
 {
-    // Events are only updated once every EVENT_UPDATE_TIME ms to prevent lag with large amount of events
-    if (m_EventUpdateTime < diff)
-    {
-        m_EventDiff += diff;
-
-        // Check for time based events
-        for (CreatureEventAIList::iterator i = m_CreatureEventAIList.begin(); i != m_CreatureEventAIList.end(); ++i)
-        {
-            // Decrement Timers
-            if (i->Time)
-            {
-                // Do not decrement timers if event cannot trigger in this phase
-                if (!(i->Event.event_inverse_phase_mask & (1 << m_Phase)))
-                {
-                    if (i->Time > m_EventDiff)
-                        i->Time -= m_EventDiff;
-                    else
-                        i->Time = 0;
-                }
-            }
-
-            // Skip processing of events that have time remaining or are disabled
-            if (!(i->Enabled) || i->Time)
-                continue;
-
-            if (IsTimerBasedEvent(i->Event.event_type))
-                ProcessEvent(*i);
-        }
-
-        m_EventDiff = 0;
-        m_EventUpdateTime = EVENT_UPDATE_TIME;
-    }
-    else
-    {
-        m_EventDiff += diff;
-        m_EventUpdateTime -= diff;
-    }
+    UpdateEventTimers(diff);
 
     if (getTotem().GetTotemType() != TOTEM_ACTIVE)
         return;
@@ -106,7 +72,7 @@ void TotemAI::UpdateAI(const uint32 diff)
 
     // Get spell rangy
     SpellRangeEntry const* srange = sSpellRangeStore.LookupEntry(spellInfo->rangeIndex);
-    float max_range = GetSpellMaxRange(srange);
+    float maxRange = GetSpellMaxRange(srange);
 
     // SPELLMOD_RANGE not applied in this place just because nonexistent range mods for attacking totems
 
@@ -115,14 +81,19 @@ void TotemAI::UpdateAI(const uint32 diff)
 
     // Search victim if no, not attackable, or out of range, or friendly (possible in case duel end)
     if (!victim ||
-            !victim->isTargetableForAttack() || !m_creature->IsWithinDistInMap(victim, max_range) ||
-            m_creature->IsFriendlyTo(victim) || !victim->isVisibleForOrDetect(m_creature, m_creature, false))
+            !m_creature->CanAttackOnSight(victim) || !m_creature->IsWithinDistInMap(victim, maxRange) ||
+            m_creature->CanAssist(victim) || !victim->IsVisibleForOrDetect(m_creature, m_creature, false))
     {
         victim = nullptr;
 
-        MaNGOS::NearestAttackableUnitInObjectRangeCheck u_check(m_creature, m_creature, max_range);
-        MaNGOS::UnitLastSearcher<MaNGOS::NearestAttackableUnitInObjectRangeCheck> checker(victim, u_check);
-        Cell::VisitAllObjects(m_creature, checker, max_range);
+        if (maxRange != 0.0f)
+        {
+            MaNGOS::NearestAttackableUnitInObjectRangeCheck u_check(m_creature, m_creature->GetOwner(), maxRange);
+            MaNGOS::UnitLastSearcher<MaNGOS::NearestAttackableUnitInObjectRangeCheck> checker(victim, u_check);
+            Cell::VisitAllObjects(m_creature, checker, maxRange);
+        }
+        else
+            victim = m_creature;
     }
 
     // If have target
@@ -139,12 +110,12 @@ void TotemAI::UpdateAI(const uint32 diff)
         i_victimGuid.Clear();
 }
 
-bool TotemAI::IsVisible(Unit*) const
+bool TotemAI::IsVisible(Unit* /*who*/) const
 {
     return false;
 }
 
-void TotemAI::AttackStart(Unit*)
+void TotemAI::AttackStart(Unit* /*who*/)
 {
 }
 

@@ -134,7 +134,7 @@ enum
     YELL_PATROL_1           = -1230048,
     YELL_PATROL_2           = -1230049,
     SPELL_NAGMARA_VANISH    = 15341,
-    
+
     // Emperor Dagran Thaurissan
     YELL_SENATOR_1          = -1230060,
     YELL_SENATOR_2          = -1230061,
@@ -157,7 +157,7 @@ struct ArenaCylinder
     uint32 m_uiHeight;
 };
 
-static const ArenaCylinder aArenaCrowdVolume[] = {595.78f, -188.65f, -38.63f, 69, 10};
+static const ArenaCylinder aArenaCrowdVolume = { 595.78f, -188.65f, -38.63f, 69, 10 };
 
 enum ArenaNPCs
 {
@@ -204,7 +204,8 @@ static const float aVaultPositions[4] = {821.905f, -338.382f, -50.134f, 3.78736f
 static const float aHurleyPositions[4] = {856.0867f, -149.7469f, -49.6719f, 0.05949629f};
 
 // Used to summon the patrol in Grim Guzzler
-static const float aBarPatrolPositions[2][4] = {
+static const float aBarPatrolPositions[2][4] =
+{
     {872.7059f, -232.5491f, -43.7525f, 2.069044f},
     {865.5645f, -219.7471f, -43.7033f, 2.033881f}
 };
@@ -234,22 +235,23 @@ class instance_blackrock_depths : public ScriptedInstance
         const char* Save() const override { return m_strInstData.c_str(); }
         void Load(const char* chrIn) override;
 
-        void Update(uint32 uiDiff) override;
+        void Update(const uint32 diff) override;
 
         // Arena Event
         void SetArenaCenterCoords(float fX, float fY, float fZ) { m_fArenaCenterX = fX; m_fArenaCenterY = fY; m_fArenaCenterZ = fZ; }
-        void GetArenaCenterCoords(float& fX, float& fY, float& fZ) { fX = m_fArenaCenterX; fY = m_fArenaCenterY; fZ = m_fArenaCenterZ; }
-        void GetArenaCrowdGuid(GuidSet& sCrowdSet) { sCrowdSet = m_sArenaCrowdNpcGuids; }
+        void GetArenaCenterCoords(float& fX, float& fY, float& fZ) const
+        { fX = m_fArenaCenterX; fY = m_fArenaCenterY; fZ = m_fArenaCenterZ; }
+        void GetArenaCrowdGuid(GuidSet& sCrowdSet) const { sCrowdSet = m_sArenaCrowdNpcGuids; }
 
         // Bar events
         void SetBarDoorIsOpen() { m_bIsBarDoorOpen = true; }
-        void GetBarDoorIsOpen(bool& bIsOpen) { bIsOpen = m_bIsBarDoorOpen; }
+        void GetBarDoorIsOpen(bool& bIsOpen) const { bIsOpen = m_bIsBarDoorOpen; }
         void HandleBarPatrons(uint8 uiEventType);
         void HandleBarPatrol(uint8 uiStep);
 
     private:
         void DoCallNextDwarf();
-        bool CanReplacePrincess();
+        bool CanReplacePrincess() const;
 
         uint32 m_auiEncounter[MAX_ENCOUNTER];
         std::string m_strInstData;

@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "naxxramas.h"
 
 enum
@@ -130,7 +130,7 @@ struct boss_anubrekhanAI : public ScriptedAI
         DoCastSpellIfCan(m_creature, SPELL_DOUBLE_ATTACK, CAST_TRIGGERED | CAST_AURA_NOT_PRESENT);
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
     {
         if (!m_bHasDoneIntro && eventType == AI_EVENT_START_EVENT)
         {
@@ -216,12 +216,12 @@ struct boss_anubrekhanAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_anubrekhan(Creature* pCreature)
+UnitAI* GetAI_boss_anubrekhan(Creature* pCreature)
 {
     return new boss_anubrekhanAI(pCreature);
 }
 
-bool GOUse_go_anub_door(Player* pPlayer, GameObject* pGo)
+bool GOUse_go_anub_door(Player* /*pPlayer*/, GameObject* pGo)
 {
     if (ScriptedInstance* pInstance = (ScriptedInstance*)pGo->GetInstanceData())
     {
@@ -232,7 +232,7 @@ bool GOUse_go_anub_door(Player* pPlayer, GameObject* pGo)
             if (Creature* pAnub = pInstance->GetSingleCreatureFromStorage(NPC_ANUB_REKHAN))
             {
                 if (boss_anubrekhanAI* pAnubAI = dynamic_cast<boss_anubrekhanAI*>(pAnub->AI()))
-                        pAnubAI->SendAIEvent(AI_EVENT_START_EVENT, pAnub, pAnub);
+                    pAnubAI->SendAIEvent(AI_EVENT_START_EVENT, pAnub, pAnub);
             }
         }
     }
@@ -241,9 +241,7 @@ bool GOUse_go_anub_door(Player* pPlayer, GameObject* pGo)
 
 void AddSC_boss_anubrekhan()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_anubrekhan";
     pNewScript->GetAI = &GetAI_boss_anubrekhan;
     pNewScript->RegisterSelf();

@@ -117,9 +117,9 @@ class instance_ruins_of_ahnqiraj : public ScriptedInstance
         void SetData(uint32 uiType, uint32 uiData) override;
         uint32 GetData(uint32 uiType) const override;
 
-        void GetKaldoreiGuidList(GuidList& lList) { lList = m_lKaldoreiGuidList; }
+        void GetKaldoreiGuidList(GuidList& lList) const { lList = m_lKaldoreiGuidList; }
 
-        void Update(uint32 uiDiff) override;
+        void Update(const uint32 diff) override;
 
         const char* Save() const override { return m_strInstData.c_str(); }
         void Load(const char* chrIn) override;

@@ -19,27 +19,30 @@
 #ifndef MANGOS_POSSESSEDAI_H
 #define MANGOS_POSSESSEDAI_H
 
-#include "CreatureAI.h"
+#include "UnitAI.h"
 #include "Entities/ObjectGuid.h"
 #include "Timer.h"
 
 class Creature;
 class Spell;
 
-class PossessedAI : public CreatureAI
+class PossessedAI : public UnitAI
 {
-public:
+    public:
 
-    explicit PossessedAI(Creature* c) : CreatureAI(c) {}
-    explicit PossessedAI(Unit* unit) : CreatureAI(unit) {}
+        explicit PossessedAI(Creature* creature) : UnitAI(creature) {}
+        explicit PossessedAI(Unit* unit) : UnitAI(unit) {}
 
-    static int Permissible(const Creature*) { return PERMIT_BASE_NO; }
+        static int Permissible(const Creature* /*creature*/) { return PERMIT_BASE_NO; }
 
-    //void GetAIInformation(ChatHandler& reader) override;
+        //void GetAIInformation(ChatHandler& reader) override;
 
-    void UpdateAI(const uint32 diff) override
-    {
-        DoMeleeAttackIfReady();
-    }
+        void UpdateAI(const uint32 /*diff*/) override
+        {
+            DoMeleeAttackIfReady();
+        }
+
+    protected:
+        std::string GetAIName() override { return "PossessedAI"; }
 };
 #endif

@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "naxxramas.h"
 
 enum
@@ -165,7 +165,7 @@ struct boss_faerlinaAI : public ScriptedAI
         {
             if (DoCastSpellIfCan(m_creature, SPELL_ENRAGE) == CAST_OK)
             {
-                switch (urand(0,2))
+                switch (urand(0, 2))
                 {
                     case 0: DoScriptText(SAY_ENRAGE_1, m_creature); break;
                     case 1: DoScriptText(SAY_ENRAGE_2, m_creature); break;
@@ -181,16 +181,14 @@ struct boss_faerlinaAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_faerlina(Creature* pCreature)
+UnitAI* GetAI_boss_faerlina(Creature* pCreature)
 {
     return new boss_faerlinaAI(pCreature);
 }
 
 void AddSC_boss_faerlina()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_faerlina";
     pNewScript->GetAI = &GetAI_boss_faerlina;
     pNewScript->RegisterSelf();

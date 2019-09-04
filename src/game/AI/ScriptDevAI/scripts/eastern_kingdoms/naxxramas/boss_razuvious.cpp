@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "naxxramas.h"
 
 enum
@@ -60,7 +60,7 @@ struct boss_razuviousAI : public ScriptedAI
     void Reset() override
     {
         m_uiUnbalancingStrikeTimer = 30000;                 // 30 seconds
-        m_uiDisruptingShoutTimer   = 25000;                 // 25 seconds               
+        m_uiDisruptingShoutTimer   = 25000;                 // 25 seconds
     }
 
     void KilledUnit(Unit* /*Victim*/) override
@@ -141,16 +141,14 @@ struct boss_razuviousAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_razuvious(Creature* pCreature)
+UnitAI* GetAI_boss_razuvious(Creature* pCreature)
 {
     return new boss_razuviousAI(pCreature);
 }
 
 void AddSC_boss_razuvious()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_razuvious";
     pNewScript->GetAI = &GetAI_boss_razuvious;
     pNewScript->RegisterSelf();

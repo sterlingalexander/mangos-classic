@@ -40,7 +40,7 @@ void WorldSession::SendGMTicketGetTicket(uint32 status, GMTicket* ticket /*= nul
         text += textBuf;
     }
 
-    int len = text.size() + 1;
+    size_t len = text.size() + 1;
     WorldPacket data(SMSG_GMTICKET_GETTICKET, (4 + len + 1 + 4 + 2 + 4 + 4));
     data << uint32(status);                                 // standard 0x0A, 0x06 if text present
     if (status == 6)
@@ -93,7 +93,7 @@ void WorldSession::HandleGMTicketCreateOpcode(WorldPacket& recv_data)
 {
     uint32 map;
     float x, y, z;
-    std::string ticketText = "";
+    std::string ticketText;
 
     recv_data >> map >> x >> y >> z;                        // last check 2.4.3
     recv_data >> ticketText;
@@ -146,7 +146,7 @@ void WorldSession::HandleGMSurveySubmitOpcode(WorldPacket& recv_data)
 
     uint8 result[10];
     memset(result, 0, sizeof(result));
-    for (int i = 0; i < 10; ++i)
+    for (unsigned char& i : result)
     {
         uint32 questionID;
         recv_data >> questionID;                            // GMSurveyQuestions.dbc
@@ -158,7 +158,7 @@ void WorldSession::HandleGMSurveySubmitOpcode(WorldPacket& recv_data)
         recv_data >> value;                                 // answer
         recv_data >> unk_text;                              // always empty?
 
-        result[i] = value;
+        i = value;
         DEBUG_LOG("SURVEY: ID %u, value %u, text %s", questionID, value, unk_text.c_str());
     }
 

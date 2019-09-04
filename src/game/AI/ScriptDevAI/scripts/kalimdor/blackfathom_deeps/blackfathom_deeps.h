@@ -102,7 +102,7 @@ class instance_blackfathom_deeps : public ScriptedInstance
         void OnObjectCreate(GameObject* pGo) override;
         void OnCreatureDeath(Creature* pCreature) override;
 
-        void Update(uint32 uiDiff) override;
+        void Update(const uint32 diff) override;
 
         void SetData(uint32 uiType, uint32 uiData) override;
         uint32 GetData(uint32 uiType) const override;
@@ -112,7 +112,7 @@ class instance_blackfathom_deeps : public ScriptedInstance
 
     protected:
         void DoSpawnMobs(uint8 uiWaveIndex);
-        bool IsWaveEventFinished();
+        bool IsWaveEventFinished() const;
 
         uint32 m_auiEncounter[MAX_ENCOUNTER];
         std::string m_strInstData;

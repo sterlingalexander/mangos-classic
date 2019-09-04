@@ -17,13 +17,13 @@
 /* ScriptData
 SDName: Boss_Thaddius
 SD%Complete: 85
-SDComment: Magnetic Pull, Tesla-Chains, Polaritiy-Shift missing (core!)
+SDComment: Magnetic Pull, Tesla-Chains
 SDCategory: Naxxramas
 EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+#include "AI/ScriptDevAI/include/precompiled.h"/* ContentData
 boss_thaddius
 npc_tesla_coil
 boss_stalagg
@@ -108,7 +108,8 @@ struct boss_thaddiusAI : public Scripted_NoMovementAI
         m_uiBallLightningTimer = 1 * IN_MILLISECONDS;
         m_uiBerserkTimer = 6 * MINUTE * IN_MILLISECONDS;
 
-        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
+        DoCastSpellIfCan(m_creature, SPELL_THADIUS_SPAWN);
     }
 
     void Aggro(Unit* /*pWho*/) override
@@ -121,7 +122,7 @@ struct boss_thaddiusAI : public Scripted_NoMovementAI
         }
 
         // Make Attackable
-        m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
     }
 
     void JustReachedHome() override
@@ -230,7 +231,7 @@ struct boss_thaddiusAI : public Scripted_NoMovementAI
     }
 };
 
-CreatureAI* GetAI_boss_thaddius(Creature* pCreature)
+UnitAI* GetAI_boss_thaddius(Creature* pCreature)
 {
     return new boss_thaddiusAI(pCreature);
 }
@@ -299,7 +300,6 @@ struct npc_tesla_coilAI : public Scripted_NoMovementAI
     // * To not remove the Passive spells when evading after ie killed a player
     void EnterEvadeMode() override
     {
-        m_creature->DeleteThreatList();
         m_creature->CombatStop();
     }
 
@@ -318,10 +318,7 @@ struct npc_tesla_coilAI : public Scripted_NoMovementAI
 
         m_bToFeugen = m_creature->GetDistanceOrder(pNoxTeslaFeugen, pNoxTeslaStalagg);
 
-        if (DoCastSpellIfCan(m_creature, m_bToFeugen ? SPELL_FEUGEN_CHAIN : SPELL_STALAGG_CHAIN) == CAST_OK)
-            return true;
-
-        return false;
+        return DoCastSpellIfCan(m_creature, m_bToFeugen ? SPELL_FEUGEN_CHAIN : SPELL_STALAGG_CHAIN) == CAST_OK;
     }
 
     void ReApplyChain(uint32 uiEntry)
@@ -340,7 +337,7 @@ struct npc_tesla_coilAI : public Scripted_NoMovementAI
             m_creature->InterruptNonMeleeSpells(true);
             GameObject* pGo = m_pInstance->GetSingleGameObjectFromStorage(m_bToFeugen ? GO_CONS_NOX_TESLA_FEUGEN : GO_CONS_NOX_TESLA_STALAGG);
 
-            if (pGo && pGo->GetGoType() == GAMEOBJECT_TYPE_BUTTON && pGo->getLootState() == GO_ACTIVATED)
+            if (pGo && pGo->GetGoType() == GAMEOBJECT_TYPE_BUTTON && pGo->GetLootState() == GO_ACTIVATED)
                 pGo->ResetDoorOrButton();
 
             DoCastSpellIfCan(m_creature, m_bToFeugen ? SPELL_FEUGEN_CHAIN : SPELL_STALAGG_CHAIN);
@@ -391,7 +388,7 @@ struct npc_tesla_coilAI : public Scripted_NoMovementAI
     }
 };
 
-CreatureAI* GetAI_npc_tesla_coil(Creature* pCreature)
+UnitAI* GetAI_npc_tesla_coil(Creature* pCreature)
 {
     return new npc_tesla_coilAI(pCreature);
 }
@@ -427,12 +424,13 @@ struct boss_thaddiusAddsAI : public ScriptedAI
         m_uiWarStompTimer = urand(8 * IN_MILLISECONDS, 10 * IN_MILLISECONDS);
 
         // We might Reset while faking death, so undo this
-        m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
         m_creature->SetHealth(m_creature->GetMaxHealth());
         m_creature->SetStandState(UNIT_STAND_STATE_STAND);
     }
 
-    Creature* GetOtherAdd()                                 // For Stalagg returns pFeugen, for Feugen returns pStalagg
+    Creature* GetOtherAdd() const
+    // For Stalagg returns pFeugen, for Feugen returns pStalagg
     {
         switch (m_creature->GetEntry())
         {
@@ -510,7 +508,7 @@ struct boss_thaddiusAddsAI : public ScriptedAI
         Reset();
     }
 
-    bool IsCountingDead()
+    bool IsCountingDead() const
     {
         return m_bFakeDeath || m_creature->isDead();
     }
@@ -590,20 +588,20 @@ struct boss_thaddiusAddsAI : public ScriptedAI
         DoMeleeAttackIfReady();
     }
 
-    void DamageTaken(Unit* pKiller, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    void DamageTaken(Unit* pKiller, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
-        if (uiDamage < m_creature->GetHealth())
+        if (damage < m_creature->GetHealth())
             return;
 
         // Prevent glitch if in fake death
         if (m_bFakeDeath)
         {
-            uiDamage = 0;
+            damage = std::min(damage, m_creature->GetHealth() - 1);
             return;
         }
 
         // prevent death
-        uiDamage = 0;
+        damage = std::min(damage, m_creature->GetHealth() - 1);
         m_bFakeDeath = true;
 
         m_creature->InterruptNonMeleeSpells(false);
@@ -612,7 +610,7 @@ struct boss_thaddiusAddsAI : public ScriptedAI
         m_creature->ClearComboPointHolders();
         m_creature->RemoveAllAurasOnDeath();
         m_creature->ModifyAuraState(AURA_STATE_HEALTHLESS_20_PERCENT, false);
-        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER);
         m_creature->ClearAllReactives();
         m_creature->GetMotionMaster()->Clear();
         m_creature->GetMotionMaster()->MoveIdle();
@@ -669,7 +667,7 @@ struct boss_stalaggAI : public boss_thaddiusAddsAI
     }
 };
 
-CreatureAI* GetAI_boss_stalagg(Creature* pCreature)
+UnitAI* GetAI_boss_stalagg(Creature* pCreature)
 {
     return new boss_stalaggAI(pCreature);
 }
@@ -723,16 +721,14 @@ struct boss_feugenAI : public boss_thaddiusAddsAI
     }
 };
 
-CreatureAI* GetAI_boss_feugen(Creature* pCreature)
+UnitAI* GetAI_boss_feugen(Creature* pCreature)
 {
     return new boss_feugenAI(pCreature);
 }
 
 void AddSC_boss_thaddius()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_thaddius";
     pNewScript->GetAI = &GetAI_boss_thaddius;
     pNewScript->pEffectDummyNPC = &EffectDummyNPC_spell_thaddius_encounter;

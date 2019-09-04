@@ -23,10 +23,12 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "scholomance.h"
+#include "GameEvents/GameEventMgr.h"
 
 instance_scholomance::instance_scholomance(Map* pMap) : ScriptedInstance(pMap),
+    m_uiGambitTransformTimer(0),
     m_uiGandlingEvent(0),
     m_bIsRoomReset(false)
 {
@@ -37,8 +39,8 @@ void instance_scholomance::Initialize()
 {
     memset(&m_auiEncounter, 0, sizeof(m_auiEncounter));
 
-    for (uint8 i = 0; i < MAX_EVENTS; ++i)
-        m_mGandlingData[aGandlingEvents[i]] = GandlingEventData();
+    for (unsigned int aGandlingEvent : aGandlingEvents)
+        m_mGandlingData[aGandlingEvent] = GandlingEventData();
 }
 
 void instance_scholomance::OnPlayerEnter(Player* pPlayer)
@@ -60,11 +62,16 @@ void instance_scholomance::OnCreatureCreate(Creature* pCreature)
         case NPC_REANIMATED_CORPSE:
         case NPC_DISEASED_GHOUL:
         case NPC_RISEN_ABERRATION:
-            if (GetData(TYPE_RATTLEGORE) != DONE && (pCreature->GetPositionZ() > aEntranceRoom->m_fCenterZ) && (pCreature->GetPositionX() - aEntranceRoom->m_fCornerX < aEntranceRoom->m_uiLength) && (pCreature->GetPositionY() - aEntranceRoom->m_fCornerY < aEntranceRoom->m_uiWidth))
+            if (GetData(TYPE_RATTLEGORE) != DONE && (pCreature->GetPositionZ() > aEntranceRoom.m_fCenterZ) && (pCreature->GetPositionX() - aEntranceRoom.m_fCornerX < aEntranceRoom.m_uiLength) && (pCreature->GetPositionY() - aEntranceRoom.m_fCornerY < aEntranceRoom.m_uiWidth))
                 m_sEntranceRoomGuids.insert(pCreature->GetObjectGuid());
             break;
+        case NPC_SCHOLOMANCE_STUDENT:
+            m_sViewingRoomGuids.insert(pCreature->GetObjectGuid());
+            break;
+        case NPC_VECTUS:
+        case NPC_MARDUK_BLACKPOOL:
         case NPC_DARKMASTER_GANDLING:
-            m_mNpcEntryGuidStore[NPC_DARKMASTER_GANDLING] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
         case NPC_RISEN_GUARDIAN:
             GandlingEventMap::iterator find = m_mGandlingData.find(m_uiGandlingEvent);
@@ -85,7 +92,7 @@ void instance_scholomance::OnObjectCreate(GameObject* pGo)
         case GO_GATE_KIRTONOS:
         case GO_GATE_RAS:
         case GO_GATE_GANDLING:
-            m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+            m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
             break;
 
         case GO_GATE_MALICIA:  m_mGandlingData[EVENT_ID_MALICIA].m_doorGuid  = pGo->GetObjectGuid(); break;
@@ -107,9 +114,9 @@ void instance_scholomance::DoRespawnEntranceRoom(Player* pSummoner)
         return;
 
     // Despawn the mobs already in the room with the exception of the necrofiend (not stored, so not despawned)
-    for (GuidSet::const_iterator itr = m_sEntranceRoomGuids.begin(); itr != m_sEntranceRoomGuids.end(); ++itr)
+    for (auto m_sEntranceRoomGuid : m_sEntranceRoomGuids)
     {
-        if (Creature* pMob = instance->GetCreature(*itr))
+        if (Creature* pMob = instance->GetCreature(m_sEntranceRoomGuid))
             pMob->ForcedDespawn();
     }
     // Spawn the new and less numerous groups instead
@@ -137,7 +144,7 @@ void instance_scholomance::DoRespawnEntranceRoom(Player* pSummoner)
         std::random_shuffle(uiMobList.begin(), uiMobList.end());
 
         for (uint8 j = 0; j < MAX_NPC_PER_GROUP; ++j)
-            pSummoner->SummonCreature(uiMobList[j], aEntranceRoomSpawnLocs[4*i+j].m_fX, aEntranceRoomSpawnLocs[4*i+j].m_fY, aEntranceRoomSpawnLocs[4*i+j].m_fZ, aEntranceRoomSpawnLocs[4*i+j].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0);
+            pSummoner->SummonCreature(uiMobList[j], aEntranceRoomSpawnLocs[4 * i + j].m_fX, aEntranceRoomSpawnLocs[4 * i + j].m_fY, aEntranceRoomSpawnLocs[4 * i + j].m_fZ, aEntranceRoomSpawnLocs[4 * i + j].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0);
     }
     // spawn also a patrolling necrofiend
     // the waypoints are handled in DB creature_movement_template table (shared with the other necrofiend in the room)
@@ -148,7 +155,6 @@ void instance_scholomance::DoRespawnEntranceRoom(Player* pSummoner)
     m_bIsRoomReset = true;
 
     debug_log("SD2: Entrance room in Scholomance reset after Rattlegore's death");
-    return;
 }
 
 void instance_scholomance::SetData(uint32 uiType, uint32 uiData)
@@ -245,6 +251,10 @@ void instance_scholomance::DoSpawnGandlingIfCan(bool bByPlayerEnter)
     {
         if (Creature* pGandling = pPlayer->SummonCreature(NPC_DARKMASTER_GANDLING, aGandlingSpawnLocs[0].m_fX, aGandlingSpawnLocs[0].m_fY, aGandlingSpawnLocs[0].m_fZ, aGandlingSpawnLocs[0].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0))
         {
+            // Switch model to Christmas Gandling if Winter Veil event is active
+            if (IsHolidayActive(HOLIDAY_FEAST_OF_WINTER_VEIL))
+                pGandling->CastSpell(pGandling, SPELL_XMAS_GANDLING, TRIGGERED_NONE);
+
             if (!bByPlayerEnter)
                 DoScriptText(SAY_GANDLING_SPAWN, pGandling);
         }
@@ -304,9 +314,9 @@ void instance_scholomance::Load(const char* chrIn)
     loadStream >> m_auiEncounter[0] >> m_auiEncounter[1] >> m_auiEncounter[2] >> m_auiEncounter[3] >> m_auiEncounter[4]
                >> m_auiEncounter[5] >> m_auiEncounter[6] >> m_auiEncounter[7] >> m_auiEncounter[8] >> m_auiEncounter[9];
 
-    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-        if (m_auiEncounter[i] == IN_PROGRESS)
-            m_auiEncounter[i] = NOT_STARTED;
+    for (uint32& i : m_auiEncounter)
+        if (i == IN_PROGRESS)
+            i = NOT_STARTED;
 
     OUT_LOAD_INST_DATA_COMPLETE;
 }
@@ -327,15 +337,15 @@ void instance_scholomance::OnCreatureEnterCombat(Creature* pCreature)
         case NPC_DARKMASTER_GANDLING: SetData(TYPE_GANDLING, IN_PROGRESS);         break;
 
         case NPC_RISEN_GUARDIAN:
-            for (GandlingEventMap::iterator itr = m_mGandlingData.begin(); itr != m_mGandlingData.end(); ++itr)
+            for (auto& itr : m_mGandlingData)
             {
                 // if there are no minions for a room, skip it
-                if (!itr->second.m_sAddGuids.empty())
+                if (!itr.second.m_sAddGuids.empty())
                 {
                     // set data to fail in case of player death
-                    if (itr->second.m_sAddGuids.find(pCreature->GetGUIDLow()) != itr->second.m_sAddGuids.end())
+                    if (itr.second.m_sAddGuids.find(pCreature->GetGUIDLow()) != itr.second.m_sAddGuids.end())
                     {
-                        HandlePortalEvent(itr->first, IN_PROGRESS);
+                        HandlePortalEvent(itr.first, IN_PROGRESS);
                         break;
                     }
                 }
@@ -360,15 +370,15 @@ void instance_scholomance::OnCreatureEvade(Creature* pCreature)
         case NPC_DARKMASTER_GANDLING: SetData(TYPE_GANDLING, FAIL);         break;
 
         case NPC_RISEN_GUARDIAN:
-            for (GandlingEventMap::iterator itr = m_mGandlingData.begin(); itr != m_mGandlingData.end(); ++itr)
+            for (auto& itr : m_mGandlingData)
             {
                 // if there are no minions for a room, skip it
-                if (!itr->second.m_sAddGuids.empty())
+                if (!itr.second.m_sAddGuids.empty())
                 {
                     // set data to fail in case of player death
-                    if (itr->second.m_sAddGuids.find(pCreature->GetGUIDLow()) != itr->second.m_sAddGuids.end())
+                    if (itr.second.m_sAddGuids.find(pCreature->GetGUIDLow()) != itr.second.m_sAddGuids.end())
                     {
-                        HandlePortalEvent(itr->first, FAIL);
+                        HandlePortalEvent(itr.first, FAIL);
                         break;
                     }
                 }
@@ -393,26 +403,68 @@ void instance_scholomance::OnCreatureDeath(Creature* pCreature)
         case NPC_DARKMASTER_GANDLING: SetData(TYPE_GANDLING, DONE);         break;
 
         case NPC_RISEN_GUARDIAN:
-            for (GandlingEventMap::iterator itr = m_mGandlingData.begin(); itr != m_mGandlingData.end(); ++itr)
+            for (auto& itr : m_mGandlingData)
             {
                 // if there are no minions for a room, skip it
-                if (!itr->second.m_sAddGuids.empty())
+                if (!itr.second.m_sAddGuids.empty())
                 {
                     // search for the dead minion and erase it
-                    if (itr->second.m_sAddGuids.find(pCreature->GetGUIDLow()) != itr->second.m_sAddGuids.end())
+                    if (itr.second.m_sAddGuids.find(pCreature->GetGUIDLow()) != itr.second.m_sAddGuids.end())
                     {
-                        itr->second.m_sAddGuids.erase(pCreature->GetGUIDLow());
+                        itr.second.m_sAddGuids.erase(pCreature->GetGUIDLow());
 
                         // if the current list is empty; set event id as done
-                        if (itr->second.m_sAddGuids.empty())
+                        if (itr.second.m_sAddGuids.empty())
                         {
-                            HandlePortalEvent(itr->first, DONE);
+                            HandlePortalEvent(itr.first, DONE);
                             break;
                         }
                     }
                 }
             }
             break;
+    }
+}
+
+void instance_scholomance::Update(uint32 uiDiff)
+{
+    if (m_uiGambitTransformTimer)
+    {
+        if (m_uiGambitTransformTimer < uiDiff)
+            HandleDawnGambitEvent();
+        else
+            m_uiGambitTransformTimer -= uiDiff;
+    }
+}
+
+void instance_scholomance::HandleDawnGambitEvent()
+{
+    if (m_uiGambitTransformTimer == 0)
+    {
+        m_uiGambitTransformTimer = 12 * IN_MILLISECONDS;
+        return;
+    }
+    m_uiGambitTransformTimer = 0;
+
+    // Make each of the Scholomance Student cast "Viewing Room Student Transform - Effect" on himself
+    // Change faction to hostile and roam in the room
+    for (auto m_sViewingRoomGuid : m_sViewingRoomGuids)
+    {
+        if (Creature* pStudent = instance->GetCreature(m_sViewingRoomGuid))
+        {
+            pStudent->SetFactionTemporary(FACTION_SCOURGE, TEMPFACTION_RESTORE_RESPAWN);
+            pStudent->SetStandState(UNIT_STAND_STATE_STAND);
+            pStudent->GetMotionMaster()->MoveRandomAroundPoint(pStudent->GetPositionX(), pStudent->GetPositionY(), pStudent->GetPositionZ(), 2.0f);
+            pStudent->CastSpell(pStudent, SPELL_STUDENT_TRANSFORM, TRIGGERED_NONE);
+        }
+    }
+    // Change faction to hostile for Marduk and Vectus
+    if (Creature* pMarduk = GetSingleCreatureFromStorage(NPC_MARDUK_BLACKPOOL))
+        pMarduk->SetFactionTemporary(FACTION_SCOURGE, TEMPFACTION_RESTORE_RESPAWN);
+    if (Creature* pVectus = GetSingleCreatureFromStorage(NPC_VECTUS))
+    {
+        pVectus->SetFactionTemporary(FACTION_SCOURGE, TEMPFACTION_RESTORE_RESPAWN);
+        DoScriptText(YELL_VECTUS_GAMBIT, pVectus);
     }
 }
 
@@ -428,9 +480,9 @@ bool ProcessEventId_event_spell_gandling_shadow_portal(uint32 uiEventId, Object*
         if (instance_scholomance* pInstance = (instance_scholomance*)((Creature*)pSource)->GetInstanceData())
         {
             // Check if we are handling an event associated with the room events of gandling
-            for (uint8 i = 0; i < MAX_EVENTS; ++i)
+            for (unsigned int aGandlingEvent : aGandlingEvents)
             {
-                if (uiEventId == aGandlingEvents[i])
+                if (uiEventId == aGandlingEvent)
                 {
                     // Set data in progress for the current event and store current event
                     pInstance->HandlePortalEvent(uiEventId, SPECIAL);
@@ -443,11 +495,22 @@ bool ProcessEventId_event_spell_gandling_shadow_portal(uint32 uiEventId, Object*
     return false;
 }
 
+bool ProcessEventId_dawn_gambit(uint32 uiEventId, Object* pSource, Object* /*pTarget*/, bool /*bIsStart*/)
+{
+    if (instance_scholomance* pInstance = (instance_scholomance*)((Creature*)pSource)->GetInstanceData())
+    {
+        if (uiEventId == EVENT_ID_DAWN_GAMBIT)
+        {
+            pInstance->HandleDawnGambitEvent();
+            return true;
+        }
+    }
+    return false;
+}
+
 void AddSC_instance_scholomance()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "instance_scholomance";
     pNewScript->GetInstanceData = &GetInstanceData_instance_scholomance;
     pNewScript->RegisterSelf();
@@ -455,5 +518,10 @@ void AddSC_instance_scholomance()
     pNewScript = new Script;
     pNewScript->Name = "event_spell_gandling_shadow_portal";
     pNewScript->pProcessEventId = &ProcessEventId_event_spell_gandling_shadow_portal;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "event_dawn_gambit";
+    pNewScript->pProcessEventId = &ProcessEventId_dawn_gambit;
     pNewScript->RegisterSelf();
 }

@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 
 enum
 {
@@ -32,11 +32,9 @@ enum
     EMOTE_ENERGIZING         = -1509028,
 
     SPELL_TRAMPLE            = 15550,
-    SPELL_DRAIN_MANA         = 25671,
+    SPELL_DRAIN_MANA         = 25676,
     SPELL_ARCANE_ERUPTION    = 25672,
-    SPELL_SUMMON_MANAFIEND_1 = 25681,
-    SPELL_SUMMON_MANAFIEND_2 = 25682,
-    SPELL_SUMMON_MANAFIEND_3 = 25683,
+    SPELL_SUMMON_MANAFIENDS  = 25684,
     SPELL_ENERGIZE           = 25685,
 
     PHASE_ATTACKING          = 0,
@@ -57,7 +55,7 @@ struct boss_moamAI : public ScriptedAI
     void Reset() override
     {
         m_uiTrampleTimer            = 9000;
-        m_uiManaDrainTimer          = 3000;
+        m_uiManaDrainTimer          = 6000;
         m_uiSummonManaFiendsTimer   = 90000;
         m_uiCheckoutManaTimer       = 1500;
         m_uiPhase                   = PHASE_ATTACKING;
@@ -93,21 +91,16 @@ struct boss_moamAI : public ScriptedAI
 
                 if (m_uiSummonManaFiendsTimer <= uiDiff)
                 {
-                    DoCastSpellIfCan(m_creature->getVictim(), SPELL_SUMMON_MANAFIEND_1, CAST_TRIGGERED);
-                    DoCastSpellIfCan(m_creature->getVictim(), SPELL_SUMMON_MANAFIEND_2, CAST_TRIGGERED);
-                    DoCastSpellIfCan(m_creature->getVictim(), SPELL_SUMMON_MANAFIEND_3, CAST_TRIGGERED);
-                    m_uiSummonManaFiendsTimer = 90000;
+                    if (DoCastSpellIfCan(m_creature, SPELL_SUMMON_MANAFIENDS) == CAST_OK)
+                        m_uiSummonManaFiendsTimer = 90000;
                 }
                 else
                     m_uiSummonManaFiendsTimer -= uiDiff;
 
                 if (m_uiManaDrainTimer <= uiDiff)
                 {
-                    if (Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_DRAIN_MANA, SELECT_FLAG_POWER_MANA))
-                    {
-                        if (DoCastSpellIfCan(pTarget, SPELL_DRAIN_MANA) == CAST_OK)
-                            m_uiManaDrainTimer = urand(2000, 6000);
-                    }
+                    if (DoCastSpellIfCan(m_creature, SPELL_DRAIN_MANA) == CAST_OK)
+                        m_uiManaDrainTimer = 6000;
                 }
                 else
                     m_uiManaDrainTimer -= uiDiff;
@@ -132,7 +125,6 @@ struct boss_moamAI : public ScriptedAI
                         DoCastSpellIfCan(m_creature, SPELL_ARCANE_ERUPTION);
                         DoScriptText(EMOTE_MANA_FULL, m_creature);
                         m_uiPhase = PHASE_ATTACKING;
-                        return;
                     }
                 }
                 else
@@ -142,16 +134,14 @@ struct boss_moamAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_moam(Creature* pCreature)
+UnitAI* GetAI_boss_moam(Creature* pCreature)
 {
     return new boss_moamAI(pCreature);
 }
 
 void AddSC_boss_moam()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_moam";
     pNewScript->GetAI = &GetAI_boss_moam;
     pNewScript->RegisterSelf();

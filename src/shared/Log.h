@@ -57,9 +57,10 @@ enum LogFilters
     LOG_FILTER_PATHFINDING        = 0x010000,               // 16 Pathfinding
     LOG_FILTER_MAP_LOADING        = 0x020000,               // 17 Map loading/unloading (MAP, VMAPS, MMAP)
     LOG_FILTER_EVENT_AI_DEV       = 0x040000,               // 18 Event AI actions
+    LOG_FILTER_DB_SCRIPT          = 0x080000,               // 19 Db scripts
 };
 
-#define LOG_FILTER_COUNT            19
+#define LOG_FILTER_COUNT            20
 
 struct LogFilterData
 {
@@ -129,10 +130,14 @@ class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, std::m
             if (worldLogfile != nullptr)
                 fclose(worldLogfile);
             worldLogfile = nullptr;
+
+            if (customLogFile != nullptr)
+                fclose(customLogFile);
+            customLogFile = nullptr;
         }
     public:
         void Initialize();
-        void InitColors(const std::string& init_str);
+        void InitColors(const std::string& str);
 
         void outCommand(uint32 account, const char* str, ...) ATTR_PRINTF(3, 4);
         void outString();                                   // any log level
@@ -149,31 +154,32 @@ class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, std::m
 
         void outErrorDb();                                  // any log level
         // any log level
-        void outErrorDb(const char* str, ...)     ATTR_PRINTF(2, 3);
+        void outErrorDb(const char* err, ...)     ATTR_PRINTF(2, 3);
         // any log level
         void outChar(const char* str, ...)        ATTR_PRINTF(2, 3);
 
         void outErrorEventAI();                             // any log level
         // any log level
-        void outErrorEventAI(const char* str, ...)      ATTR_PRINTF(2, 3);
+        void outErrorEventAI(const char* err, ...)      ATTR_PRINTF(2, 3);
 
         void outErrorScriptLib();                           // any log level
         // any log level
-        void outErrorScriptLib(const char* str, ...)     ATTR_PRINTF(2, 3);
+        void outErrorScriptLib(const char* err, ...)     ATTR_PRINTF(2, 3);
 
         void outWorldPacketDump(const char* socket, uint32 opcode, char const* opcodeName, ByteBuffer const& packet, bool incoming);
         // any log level
         void outCharDump(const char* str, uint32 account_id, uint32 guid, const char* name);
         void outRALog(const char* str, ...)       ATTR_PRINTF(2, 3);
+        void outCustomLog(const char* str, ...)       ATTR_PRINTF(2, 3);
         uint32 GetLogLevel() const { return m_logLevel; }
-        void SetLogLevel(char* Level);
-        void SetLogFileLevel(char* Level);
+        void SetLogLevel(char* level);
+        void SetLogFileLevel(char* level);
         void SetColor(bool stdout_stream, Color color);
         void ResetColor(bool stdout_stream);
         void outTime() const;
         static void outTimestamp(FILE* file);
         static std::string GetTimestampStr();
-        bool HasLogFilter(uint32 filter) const { return !!(m_logFilter & filter); }
+        bool HasLogFilter(uint32 filter) const { return (m_logFilter & filter) != 0; }
         void SetLogFilter(LogFilters filter, bool on) { if (on) m_logFilter |= filter; else m_logFilter &= ~filter; }
         bool HasLogLevelOrHigher(LogLevel loglvl) const { return m_logLevel >= loglvl || (m_logFileLevel >= loglvl && logfile); }
         bool IsOutCharDump() const { return m_charLog_Dump; }
@@ -196,6 +202,7 @@ class Log : public MaNGOS::Singleton<Log, MaNGOS::ClassLevelLockable<Log, std::m
         FILE* eventAiErLogfile;
         FILE* scriptErrLogFile;
         FILE* worldLogfile;
+        FILE* customLogFile;
         std::mutex m_worldLogMtx;
 
         // log/console control

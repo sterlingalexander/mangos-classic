@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 
 #define GENERIC_CREATURE_COOLDOWN   5000
 
@@ -68,7 +68,7 @@ struct generic_creatureAI : public ScriptedAI
                 if (info && !GlobalCooldown)
                 {
                     // Cast the buff spell
-                    DoCastSpell(m_creature, info);
+                    m_creature->CastSpell(m_creature, info, TRIGGERED_NONE);
 
                     // Set our global cooldown
                     GlobalCooldown = GENERIC_CREATURE_COOLDOWN;
@@ -110,8 +110,10 @@ struct generic_creatureAI : public ScriptedAI
                 if (info && (rand() % (m_creature->GetCreatureInfo()->Rank > 1 ? 2 : 5) == 0) && !GlobalCooldown)
                 {
                     // Cast the spell
-                    if (Healing)DoCastSpell(m_creature, info);
-                    else DoCastSpell(m_creature->getVictim(), info);
+                    if (Healing)
+                        m_creature->CastSpell(m_creature, info, TRIGGERED_NONE);
+                    else
+                        m_creature->CastSpell(m_creature->getVictim(), info, TRIGGERED_NONE);
 
                     // Set our global cooldown
                     GlobalCooldown = GENERIC_CREATURE_COOLDOWN;
@@ -144,8 +146,10 @@ struct generic_creatureAI : public ScriptedAI
                 }
 
                 // Cast spell
-                if (Healing) DoCastSpell(m_creature, info);
-                else DoCastSpell(m_creature->getVictim(), info);
+                if (Healing)
+                    m_creature->CastSpell(m_creature, info, TRIGGERED_NONE);
+                else
+                    m_creature->CastSpell(m_creature->getVictim(), info, TRIGGERED_NONE);
 
                 // Set our global cooldown
                 GlobalCooldown = GENERIC_CREATURE_COOLDOWN;
@@ -160,16 +164,14 @@ struct generic_creatureAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_generic_creature(Creature* pCreature)
+UnitAI* GetAI_generic_creature(Creature* pCreature)
 {
     return new generic_creatureAI(pCreature);
 }
 
 void AddSC_generic_creature()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "generic_creature";
     pNewScript->GetAI = &GetAI_generic_creature;
     pNewScript->RegisterSelf(false);

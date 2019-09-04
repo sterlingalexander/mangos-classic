@@ -23,14 +23,14 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "scholomance.h"
 
 enum
 {
     SPELL_ARCANE_MISSILES          = 15790,
     SPELL_SHADOW_SHIELD            = 12040,
-    SPELL_CURSE                    = 18702,
+    SPELL_CURSE_SD                 = 18702,
     SPELL_SHADOW_PORTAL            = 17950
 };
 
@@ -83,7 +83,7 @@ struct boss_darkmaster_gandlingAI : public ScriptedAI
         // Curse Timer
         if (m_uiCurseTimer < uiDiff)
         {
-            if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_CURSE) == CAST_OK)
+            if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_CURSE_SD) == CAST_OK)
                 m_uiCurseTimer = urand(15000, 27000);
         }
         else
@@ -115,16 +115,14 @@ struct boss_darkmaster_gandlingAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_darkmaster_gandling(Creature* pCreature)
+UnitAI* GetAI_boss_darkmaster_gandling(Creature* pCreature)
 {
     return new boss_darkmaster_gandlingAI(pCreature);
 }
 
 void AddSC_boss_darkmaster_gandling()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_darkmaster_gandling";
     pNewScript->GetAI = &GetAI_boss_darkmaster_gandling;
     pNewScript->RegisterSelf();

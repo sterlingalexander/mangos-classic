@@ -31,7 +31,7 @@
 #include "Groups/Group.h"
 
 #ifdef BUILD_PLAYERBOT
-    #include "PlayerBot/Base/PlayerbotAI.h"
+#include "PlayerBot/Base/PlayerbotAI.h"
 #endif
 
 void WorldSession::HandleQuestgiverStatusQueryOpcode(WorldPacket& recv_data)
@@ -55,7 +55,7 @@ void WorldSession::HandleQuestgiverStatusQueryOpcode(WorldPacket& recv_data)
         {
             Creature* cr_questgiver = (Creature*)questgiver;
 
-            if (!cr_questgiver->IsHostileTo(_player))       // not show quest status to enemies
+            if (_player->CanInteract(static_cast<Unit*>(questgiver)))       // not show quest status to enemies
             {
                 dialogStatus = sScriptDevAIMgr.GetDialogStatus(_player, cr_questgiver);
 
@@ -67,11 +67,14 @@ void WorldSession::HandleQuestgiverStatusQueryOpcode(WorldPacket& recv_data)
         case TYPEID_GAMEOBJECT:
         {
             GameObject* go_questgiver = (GameObject*)questgiver;
-            dialogStatus = sScriptDevAIMgr.GetDialogStatus(_player, go_questgiver);
 
-            if (dialogStatus == DIALOG_STATUS_UNDEFINED)
-                dialogStatus = getDialogStatus(_player, go_questgiver, DIALOG_STATUS_NONE);
+            if (_player->CanInteract(go_questgiver))
+            {
+                dialogStatus = sScriptDevAIMgr.GetDialogStatus(_player, go_questgiver);
 
+                if (dialogStatus == DIALOG_STATUS_UNDEFINED)
+                    dialogStatus = getDialogStatus(_player, go_questgiver, DIALOG_STATUS_NONE);
+            }
             break;
         }
         default:
@@ -355,12 +358,12 @@ void WorldSession::HandleQuestConfirmAccept(WorldPacket& recv_data)
 
         if (pQuest->IsAllowedInRaid())
         {
-            if (!_player->IsInSameRaidWith(pOriginalPlayer))
+            if (!_player->IsInGroup(pOriginalPlayer))
                 return;
         }
         else
         {
-            if (!_player->IsInSameGroupWith(pOriginalPlayer))
+            if (!_player->IsInParty(pOriginalPlayer))
                 return;
         }
 
@@ -465,7 +468,7 @@ void WorldSession::HandlePushQuestToParty(WorldPacket& recvPacket)
 
 #ifdef BUILD_PLAYERBOT
                 if (pPlayer->GetPlayerbotAI())
-                    pPlayer->GetPlayerbotAI()->AcceptQuest( pQuest, _player );
+                    pPlayer->GetPlayerbotAI()->AcceptQuest(pQuest, _player);
                 else
                 {
                     pPlayer->PlayerTalkClass->SendQuestGiverQuestDetails(pQuest, _player->GetObjectGuid(), true);
@@ -544,7 +547,8 @@ uint32 WorldSession::getDialogStatus(const Player* pPlayer, const Object* questg
         QuestStatus status = pPlayer->GetQuestStatus(quest_id);
 
         if (status == QUEST_STATUS_COMPLETE && !pPlayer->GetQuestRewardStatus(quest_id))
-            dialogStatusNew = pQuest->IsRepeatable() ? DIALOG_STATUS_REWARD_REP : DIALOG_STATUS_REWARD2;
+            dialogStatusNew = pQuest->IsRepeatable() && pQuest->GetQuestMethod() != 2 ?
+                              DIALOG_STATUS_REWARD_REP : DIALOG_STATUS_REWARD2;
         else if (pQuest->IsAutoComplete() && pPlayer->CanTakeQuest(pQuest, false))
             dialogStatusNew = pQuest->IsRepeatable() ? DIALOG_STATUS_REWARD_REP : DIALOG_STATUS_AVAILABLE;
         else if (status == QUEST_STATUS_INCOMPLETE)
@@ -566,28 +570,22 @@ uint32 WorldSession::getDialogStatus(const Player* pPlayer, const Object* questg
 
         QuestStatus status = pPlayer->GetQuestStatus(quest_id);
 
-        if (status == QUEST_STATUS_NONE)                    // For all other cases the mark is handled either at some place else, or with involved-relations already
+        // For all other cases the mark is handled either at some place else, or with involved-relations already
+        if (status == QUEST_STATUS_NONE && pPlayer->CanSeeStartQuest(pQuest))
         {
-            if (pPlayer->CanSeeStartQuest(pQuest))
+            if (pPlayer->SatisfyQuestLevel(pQuest, false))
             {
-                if (pPlayer->SatisfyQuestLevel(pQuest, false))
-                {
-                    int32 lowLevelDiff = sWorld.getConfig(CONFIG_INT32_QUEST_LOW_LEVEL_HIDE_DIFF);
+                int32 lowLevelDiff = sWorld.getConfig(CONFIG_INT32_QUEST_LOW_LEVEL_HIDE_DIFF);
 
-                    if (pQuest->IsAutoComplete())
-                    {
-                        dialogStatusNew = DIALOG_STATUS_REWARD_REP;
-                    }
-                    else if (lowLevelDiff < 0 || pPlayer->getLevel() <= pPlayer->GetQuestLevelForPlayer(pQuest) + uint32(lowLevelDiff))
-                    {
-                        dialogStatusNew = DIALOG_STATUS_AVAILABLE;
-                    }
-                    else
-                        dialogStatusNew = DIALOG_STATUS_CHAT;
-                }
+                if (pQuest->IsAutoComplete())
+                    dialogStatusNew = DIALOG_STATUS_REWARD_REP;
+                else if (lowLevelDiff < 0 || pPlayer->getLevel() <= (pPlayer->GetQuestLevelForPlayer(pQuest) + uint32(lowLevelDiff)))
+                    dialogStatusNew = DIALOG_STATUS_AVAILABLE;
                 else
-                    dialogStatusNew = DIALOG_STATUS_UNAVAILABLE;
+                    dialogStatusNew = DIALOG_STATUS_CHAT;
             }
+            else
+                dialogStatusNew = DIALOG_STATUS_UNAVAILABLE;
         }
 
         if (dialogStatusNew > dialogStatus)

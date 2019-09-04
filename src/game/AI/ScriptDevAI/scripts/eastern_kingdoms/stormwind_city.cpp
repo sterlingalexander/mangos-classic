@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+#include "AI/ScriptDevAI/include/precompiled.h"/* ContentData
 npc_bartleby
 npc_dashel_stonefist
 npc_lady_katrana_prestor
@@ -54,22 +54,11 @@ struct npc_bartlebyAI : public ScriptedAI
 
     void Reset() override {}
 
-    void AttackedBy(Unit* pAttacker) override
+    void DamageTaken(Unit* pDoneBy, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
-        if (m_creature->getVictim())
-            return;
-
-        if (m_creature->IsFriendlyTo(pAttacker))
-            return;
-
-        AttackStart(pAttacker);
-    }
-
-    void DamageTaken(Unit* pDoneBy, uint32& uiDamage, DamageEffectType /*damagetype*/) override
-    {
-        if (uiDamage > m_creature->GetHealth() || ((m_creature->GetHealth() - uiDamage) * 100 / m_creature->GetMaxHealth() < 15))
+        if (damage > m_creature->GetHealth() || ((m_creature->GetHealth() - damage) * 100 / m_creature->GetMaxHealth() < 15))
         {
-            uiDamage = 0;
+            damage = std::min(damage, m_creature->GetHealth() - 1);
 
             if (pDoneBy->GetTypeId() == TYPEID_PLAYER)
                 ((Player*)pDoneBy)->AreaExploredOrEventHappens(QUEST_BEAT);
@@ -89,7 +78,7 @@ bool QuestAccept_npc_bartleby(Player* pPlayer, Creature* pCreature, const Quest*
     return true;
 }
 
-CreatureAI* GetAI_npc_bartleby(Creature* pCreature)
+UnitAI* GetAI_npc_bartleby(Creature* pCreature)
 {
     return new npc_bartlebyAI(pCreature);
 }
@@ -101,7 +90,12 @@ CreatureAI* GetAI_npc_bartleby(Creature* pCreature)
 enum
 {
     QUEST_MISSING_DIPLO_PT8     = 1447,
-    FACTION_HOSTILE             = 168
+    FACTION_HOSTILE             = 168,
+    NPC_OLD_TOWN_THUG           = 4969,
+
+    SAY_STONEFIST_1             = -1001274,
+    SAY_STONEFIST_2             = -1001275,
+    SAY_STONEFIST_3             = -1001276,
 };
 
 struct npc_dashel_stonefistAI : public ScriptedAI
@@ -111,30 +105,73 @@ struct npc_dashel_stonefistAI : public ScriptedAI
         Reset();
     }
 
-    void Reset() override {}
+    uint32 m_uiStartEventTimer;
+    uint32 m_uiEndEventTimer;
+    ObjectGuid m_playerGuid;
 
-    void AttackedBy(Unit* pAttacker) override
-    {
-        if (m_creature->getVictim())
-            return;
-
-        if (m_creature->IsFriendlyTo(pAttacker))
-            return;
-
-        AttackStart(pAttacker);
+    void Reset() override
+   {
+        SetReactState(REACT_PASSIVE);
+        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+        m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
     }
 
-    void DamageTaken(Unit* pDoneBy, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    void DamageTaken(Unit* /*doneBy*/, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
-        if (uiDamage > m_creature->GetHealth() || ((m_creature->GetHealth() - uiDamage) * 100 / m_creature->GetMaxHealth() < 15))
+        if (damage > m_creature->GetHealth() || ((m_creature->GetHealth() - damage) * 100 / m_creature->GetMaxHealth() < 15))
         {
-            uiDamage = 0;
-
-            if (pDoneBy->GetTypeId() == TYPEID_PLAYER)
-                ((Player*)pDoneBy)->AreaExploredOrEventHappens(QUEST_MISSING_DIPLO_PT8);
-
+            damage = std::min(damage, m_creature->GetHealth() - 1);
+            DoScriptText(SAY_STONEFIST_2, m_creature);
+            m_uiEndEventTimer = 5000;
             EnterEvadeMode();
         }
+    }
+
+    void StartEvent(ObjectGuid pGuid)
+    {
+        m_playerGuid = pGuid;
+        m_uiStartEventTimer = 3000;
+    }
+
+    void UpdateAI(const uint32 uiDiff) override
+    {
+        if (m_uiStartEventTimer)
+        {
+            if (m_uiStartEventTimer <= uiDiff)
+            {
+                if (Player* pPlayer = m_creature->GetMap()->GetPlayer(m_playerGuid))
+                {
+                    AttackStart(pPlayer);
+
+                    if (Creature* pThug = m_creature->SummonCreature(NPC_OLD_TOWN_THUG, -8672.33f, 442.88f, 99.98f, 3.5f, TEMPSPAWN_DEAD_DESPAWN, 300000))
+                        pThug->AI()->AttackStart(pPlayer);
+
+                    if (Creature* pThug = m_creature->SummonCreature(NPC_OLD_TOWN_THUG, -8691.59f, 441.66f, 99.41f, 6.1f, TEMPSPAWN_DEAD_DESPAWN, 300000))
+                        pThug->AI()->AttackStart(pPlayer);
+                }
+
+                m_uiStartEventTimer = 0;
+            }
+            else
+                m_uiStartEventTimer -= uiDiff;
+        }
+
+        if (m_uiEndEventTimer)
+        {
+            if (m_uiEndEventTimer <= uiDiff)
+            {
+                DoScriptText(SAY_STONEFIST_3, m_creature);
+
+                if (Player* pPlayer = m_creature->GetMap()->GetPlayer(m_playerGuid))
+                    pPlayer->AreaExploredOrEventHappens(QUEST_MISSING_DIPLO_PT8);
+
+                m_uiEndEventTimer = 0;
+            }
+            else
+                m_uiEndEventTimer -= uiDiff;
+        }
+
+        DoMeleeAttackIfReady();
     }
 };
 
@@ -143,12 +180,18 @@ bool QuestAccept_npc_dashel_stonefist(Player* pPlayer, Creature* pCreature, cons
     if (pQuest->GetQuestId() == QUEST_MISSING_DIPLO_PT8)
     {
         pCreature->SetFactionTemporary(FACTION_HOSTILE, TEMPFACTION_RESTORE_COMBAT_STOP | TEMPFACTION_RESTORE_RESPAWN);
-        pCreature->AI()->AttackStart(pPlayer);
+        pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+        pCreature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
+        pCreature->AI()->SetReactState(REACT_AGGRESSIVE);
+        DoScriptText(SAY_STONEFIST_1, pCreature, pPlayer);
+
+        if (npc_dashel_stonefistAI* pStonefistAI = dynamic_cast<npc_dashel_stonefistAI*>(pCreature->AI()))
+           pStonefistAI->StartEvent(pPlayer->GetObjectGuid());
     }
     return true;
 }
 
-CreatureAI* GetAI_npc_dashel_stonefist(Creature* pCreature)
+UnitAI* GetAI_npc_dashel_stonefist(Creature* pCreature)
 {
     return new npc_dashel_stonefistAI(pCreature);
 }
@@ -359,12 +402,12 @@ struct npc_squire_roweAI : public npc_escortAI, private DialogueHelper
     }
 
     // Check if the event is already running
-    bool IsStormwindQuestActive() { return m_bIsEventInProgress; }
+    bool IsStormwindQuestActive() const { return m_bIsEventInProgress; }
 
     void UpdateEscortAI(const uint32 uiDiff) { DialogueUpdate(uiDiff); }
 };
 
-CreatureAI* GetAI_npc_squire_rowe(Creature* pCreature)
+UnitAI* GetAI_npc_squire_rowe(Creature* pCreature)
 {
     return new npc_squire_roweAI(pCreature);
 }
@@ -401,7 +444,7 @@ bool GossipSelect_npc_squire_rowe(Player* pPlayer, Creature* pCreature, uint32 /
     if (uiAction == GOSSIP_ACTION_INFO_DEF + 1)
     {
         if (npc_squire_roweAI* pRoweAI = dynamic_cast<npc_squire_roweAI*>(pCreature->AI()))
-            pRoweAI->Start(true, pPlayer, 0, true, false);
+            pRoweAI->Start(true, pPlayer, nullptr, true, false);
 
         pPlayer->CLOSE_GOSSIP_MENU();
     }
@@ -709,7 +752,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
 
         switch (iEntry)
         {
-                // Set orientation and prepare the npcs for the next event
+            // Set orientation and prepare the npcs for the next event
             case SAY_WINDSOR_GET_READY:
                 m_creature->SetFacingTo(0.6f);
                 break;
@@ -804,10 +847,10 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                     pWrynn->GetMotionMaster()->MovePoint(0, aMoveLocations[6][0], aMoveLocations[6][1], aMoveLocations[6][2]);
 
                     // Store all the nearby guards, in order to transform them into Onyxia guards
-                    std::list<Creature*> lGuardsList;
+                    CreatureList lGuardsList;
                     GetCreatureListWithEntryInGrid(lGuardsList, pWrynn, NPC_GUARD_ROYAL, 25.0f);
 
-                    for (std::list<Creature*>::const_iterator itr = lGuardsList.begin(); itr != lGuardsList.end(); ++itr)
+                    for (CreatureList::const_iterator itr = lGuardsList.begin(); itr != lGuardsList.end(); ++itr)
                         m_lRoyalGuardsGuidList.push_back((*itr)->GetObjectGuid());
                 }
                 break;
@@ -905,7 +948,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                 DoScriptText(EMOTE_WINDSOR_DIE, m_creature);
 
                 if (Player* pPlayer = m_creature->GetMap()->GetPlayer(m_playerGuid))
-                    pPlayer->GroupEventHappens(QUEST_THE_GREAT_MASQUERADE, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_THE_GREAT_MASQUERADE, m_creature);
                 break;
             case NPC_GUARD_PATROLLER:
                 // Reset Bolvar and Wrynn
@@ -943,7 +986,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
         m_playerGuid = pPlayer->GetObjectGuid();
     }
 
-    bool IsKeepEventReady() { return m_bIsKeepReady; }
+    bool IsKeepEventReady() const { return m_bIsKeepReady; }
 
     void UpdateEscortAI(const uint32 uiDiff) override
     {
@@ -998,7 +1041,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
     }
 };
 
-CreatureAI* GetAI_npc_reginald_windsor(Creature* pCreature)
+UnitAI* GetAI_npc_reginald_windsor(Creature* pCreature)
 {
     return new npc_reginald_windsorAI(pCreature);
 }
@@ -1053,9 +1096,7 @@ bool GossipSelect_npc_reginald_windsor(Player* pPlayer, Creature* pCreature, uin
 
 void AddSC_stormwind_city()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "npc_bartleby";
     pNewScript->GetAI = &GetAI_npc_bartleby;
     pNewScript->pQuestAcceptNPC = &QuestAccept_npc_bartleby;

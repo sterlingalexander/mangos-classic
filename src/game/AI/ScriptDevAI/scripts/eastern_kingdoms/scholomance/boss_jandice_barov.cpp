@@ -16,19 +16,21 @@
 
 /* ScriptData
 SDName: Boss_jandicebarov
-SD%Complete: 100
-SDComment:
+SD%Complete: 90
+SDComment: Jandice's Illusions are missing their AoE immunity, they should only be vunerable to direct damage (missing core feature ?)
 SDCategory: Scholomance
 EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 
 enum
 {
     SPELL_CURSE_OF_BLOOD        = 16098,
+    SPELL_SPREAD_ILLUSIONS      = 17772,
     SPELL_SUMMON_ILLUSIONS      = 17773,
+    SPELL_SPREAD_JANDICE        = 17774,
     SPELL_BANISH                = 8994,
 };
 
@@ -49,10 +51,7 @@ struct boss_jandicebarovAI : public ScriptedAI
 
     void JustSummoned(Creature* pSummoned) override
     {
-        pSummoned->ApplySpellImmune(0, IMMUNITY_DAMAGE, SPELL_SCHOOL_MASK_MAGIC, true);
-
-        if (Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0))
-            pSummoned->AI()->AttackStart(pTarget);
+        pSummoned->CastSpell(pSummoned, SPELL_SPREAD_ILLUSIONS, TRIGGERED_OLD_TRIGGERED);
     }
 
     void UpdateAI(const uint32 uiDiff) override
@@ -85,8 +84,12 @@ struct boss_jandicebarovAI : public ScriptedAI
         // Illusion_Timer
         if (m_uiIllusionTimer < uiDiff)
         {
+            // Summon illusions and becomes invisible for 8 seconds while hiding into the illusions
             if (DoCastSpellIfCan(m_creature, SPELL_SUMMON_ILLUSIONS) == CAST_OK)
+            {
                 m_uiIllusionTimer = 25000;
+                DoCastSpellIfCan(m_creature, SPELL_SPREAD_JANDICE);
+            }
         }
         else
             m_uiIllusionTimer -= uiDiff;
@@ -95,16 +98,14 @@ struct boss_jandicebarovAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_jandicebarov(Creature* pCreature)
+UnitAI* GetAI_boss_jandicebarov(Creature* pCreature)
 {
     return new boss_jandicebarovAI(pCreature);
 }
 
 void AddSC_boss_jandicebarov()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_jandice_barov";
     pNewScript->GetAI = &GetAI_boss_jandicebarov;
     pNewScript->RegisterSelf();

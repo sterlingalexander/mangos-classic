@@ -19,39 +19,41 @@
 #ifndef MANGOS_PETAI_H
 #define MANGOS_PETAI_H
 
-#include "CreatureAI.h"
+#include "UnitAI.h"
 #include "Entities/ObjectGuid.h"
 #include "Timer.h"
 
 class Creature;
 class Spell;
 
-class PetAI : public CreatureAI
+class PetAI : public UnitAI
 {
     public:
 
-        explicit PetAI(Creature* c);
+        explicit PetAI(Creature* creature);
         explicit PetAI(Unit* unit);
 
-        void MoveInLineOfSight(Unit*) override;
-        void AttackStart(Unit*) override;
+        void MoveInLineOfSight(Unit* who) override;
+        void AttackStart(Unit* who) override;
         void EnterEvadeMode() override;
-        void AttackedBy(Unit*) override;
-        bool IsVisible(Unit*) const override;
-        bool IsControllable() const override { return true; }
+        void AttackedBy(Unit* attacker) override;
 
-        void UpdateAI(const uint32) override;
-        static int Permissible(const Creature*);
+        void UpdateAI(const uint32 diff) override;
+        static int Permissible(const Creature* creature);
+
+    protected:
+        std::string GetAIName() override { return "PetAI"; }
+        Creature* m_creature; // TODO: Make PetAI only available for creatures
 
     private:
-        bool _isVisible(Unit*) const;
-
         void UpdateAllies();
 
-        TimeTracker i_tracker;
         bool inCombat;
 
         GuidSet m_AllySet;
         uint32 m_updateAlliesTimer;
+
+        float m_followAngle;
+        float m_followDist;
 };
 #endif

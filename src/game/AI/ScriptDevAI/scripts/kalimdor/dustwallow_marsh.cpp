@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+/* ContentData
 npc_morokk
 npc_ogron
 npc_private_hendel
@@ -31,7 +31,7 @@ npc_stinky_ignatz
 at_nats_landing
 EndContentData */
 
-
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
 
 /*######
@@ -40,13 +40,15 @@ EndContentData */
 
 enum
 {
-    SAY_MOR_CHALLENGE               = -1000499,
-    SAY_MOR_SCARED                  = -1000500,
+    SAY_MOR_CHALLENGE       = -1000499,
+    SAY_MOR_SCARED          = -1000500,
 
-    QUEST_CHALLENGE_MOROKK          = 1173,
+    NPC_MOROKK              = 4500,
+    QUEST_CHALLENGE_MOROKK  = 1173,
 
-    FACTION_MOR_HOSTILE             = 168,
-    FACTION_MOR_RUNNING             = 35
+    FACTION_MOR_HOSTILE     = 168,
+    FACTION_MOR_RUNNING     = 35,
+    FACTION_MOR_SPAWN       = 29
 };
 
 struct npc_morokkAI : public npc_escortAI
@@ -61,6 +63,24 @@ struct npc_morokkAI : public npc_escortAI
 
     void Reset() override {}
 
+    void JustRespawned() override
+    {
+        npc_escortAI::JustRespawned();
+        m_creature->setFaction(FACTION_MOR_SPAWN);
+    }
+
+    void JustReachedHome() override
+    {
+        if (HasEscortState(STATE_ESCORT_ESCORTING))
+        {
+            if (!m_bIsSuccess)
+            {
+                FailQuestForPlayerAndGroup();
+                m_creature->ForcedDespawn();
+            }
+        }
+    }
+
     void WaypointReached(uint32 uiPointId) override
     {
         switch (uiPointId)
@@ -68,45 +88,6 @@ struct npc_morokkAI : public npc_escortAI
             case 0:
                 SetEscortPaused(true);
                 break;
-            case 1:
-                if (m_bIsSuccess)
-                    DoScriptText(SAY_MOR_SCARED, m_creature);
-                else
-                {
-                    m_creature->SetDeathState(JUST_DIED);
-                    m_creature->Respawn();
-                }
-                break;
-        }
-    }
-
-    void AttackedBy(Unit* pAttacker) override
-    {
-        if (m_creature->getVictim())
-            return;
-
-        if (m_creature->IsFriendlyTo(pAttacker))
-            return;
-
-        AttackStart(pAttacker);
-    }
-
-    virtual void DamageTaken(Unit* /*pDealer*/, uint32& uiDamage, DamageEffectType /*damagetype*/) override
-    {
-        if (HasEscortState(STATE_ESCORT_ESCORTING))
-        {
-            if (m_creature->GetHealthPercent() < 30.0f)
-            {
-                if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_CHALLENGE_MOROKK, m_creature);
-
-                m_creature->setFaction(FACTION_MOR_RUNNING);
-
-                m_bIsSuccess = true;
-                EnterEvadeMode();
-
-                uiDamage = 0;
-            }
         }
     }
 
@@ -118,23 +99,48 @@ struct npc_morokkAI : public npc_escortAI
             {
                 if (Player* pPlayer = GetPlayerForEscort())
                 {
-                    m_bIsSuccess = false;
-                    DoScriptText(SAY_MOR_CHALLENGE, m_creature, pPlayer);
-                    m_creature->setFaction(FACTION_MOR_HOSTILE);
-                    AttackStart(pPlayer);
+                    if (pPlayer->isAlive() && pPlayer->IsInRange(m_creature, 0, 70))
+                    {
+                        m_bIsSuccess = false;
+                        DoScriptText(SAY_MOR_CHALLENGE, m_creature, pPlayer);
+                        m_creature->SetImmuneToPlayer(false);
+                        SetReactState(REACT_AGGRESSIVE);
+                        m_creature->setFaction(FACTION_MOR_HOSTILE);
+                        AttackStart(pPlayer);
+                    }
+                    else
+                        SetEscortPaused(false);
                 }
-
-                SetEscortPaused(false);
+                else
+                    SetEscortPaused(false);
             }
-
             return;
+        }
+        if (m_creature->GetHealthPercent() <= 30.0f)
+        {
+            if (HasEscortState(STATE_ESCORT_PAUSED))
+            {
+                if (Player* pPlayer = GetPlayerForEscort())
+                {
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_CHALLENGE_MOROKK, m_creature);
+                    m_creature->setFaction(FACTION_MOR_RUNNING);
+                    m_bIsSuccess = true;
+                    m_creature->RemoveAllAurasOnEvade();
+                    m_creature->CombatStop(true);
+                    m_creature->SetImmuneToPlayer(true);
+                    SetEscortPaused(false);
+                    SetReactState(REACT_PASSIVE);
+                    DoScriptText(SAY_MOR_SCARED, m_creature);
+                    m_creature->GetMotionMaster()->Clear(false); // TODO: make whole EscortAI work like this
+                }
+            }
         }
 
         DoMeleeAttackIfReady();
     }
 };
 
-CreatureAI* GetAI_npc_morokk(Creature* pCreature)
+UnitAI* GetAI_npc_morokk(Creature* pCreature)
 {
     return new npc_morokkAI(pCreature);
 }
@@ -210,7 +216,7 @@ struct npc_ogronAI : public npc_escortAI
         Reset();
     }
 
-    std::list<Creature*> lCreatureList;
+    CreatureList lCreatureList;
 
     uint32 m_uiPhase;
     uint32 m_uiPhaseCounter;
@@ -243,10 +249,10 @@ struct npc_ogronAI : public npc_escortAI
     {
         if (!lCreatureList.empty())
         {
-            for (std::list<Creature*>::iterator itr = lCreatureList.begin(); itr != lCreatureList.end(); ++itr)
+            for (auto& itr : lCreatureList)
             {
-                if ((*itr)->GetEntry() == uiCreatureEntry && (*itr)->isAlive())
-                    return (*itr);
+                if (itr->GetEntry() == uiCreatureEntry && itr->isAlive())
+                    return itr;
             }
         }
 
@@ -293,15 +299,15 @@ struct npc_ogronAI : public npc_escortAI
     {
         if (!lCreatureList.empty())
         {
-            for (std::list<Creature*>::iterator itr = lCreatureList.begin(); itr != lCreatureList.end(); ++itr)
+            for (auto& itr : lCreatureList)
             {
-                if ((*itr)->GetEntry() == NPC_REETHE)
+                if (itr->GetEntry() == NPC_REETHE)
                     continue;
 
-                if ((*itr)->isAlive())
+                if (itr->isAlive())
                 {
-                    (*itr)->setFaction(FACTION_THER_HOSTILE);
-                    (*itr)->AI()->AttackStart(m_creature);
+                    itr->setFaction(FACTION_THER_HOSTILE);
+                    itr->AI()->AttackStart(m_creature);
                 }
             }
         }
@@ -404,7 +410,7 @@ struct npc_ogronAI : public npc_escortAI
                             {
                                 case 12:
                                     if (Player* pPlayer = GetPlayerForEscort())
-                                        pPlayer->GroupEventHappens(QUEST_QUESTIONING, m_creature);
+                                        pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_QUESTIONING, m_creature);
 
                                     DoScriptText(SAY_OGR_SURVIVE, m_creature);
                                     break;
@@ -443,7 +449,7 @@ bool QuestAccept_npc_ogron(Player* pPlayer, Creature* pCreature, const Quest* pQ
         if (npc_ogronAI* pEscortAI = dynamic_cast<npc_ogronAI*>(pCreature->AI()))
         {
             pEscortAI->Start(false, pPlayer, pQuest, true);
-            pCreature->SetFactionTemporary(FACTION_ESCORT_N_FRIEND_PASSIVE, TEMPFACTION_RESTORE_RESPAWN);
+            pCreature->SetFactionTemporary(FACTION_ESCORT_N_FRIEND_PASSIVE, TEMPFACTION_RESTORE_RESPAWN | TEMPFACTION_TOGGLE_IMMUNE_TO_NPC);
             DoScriptText(SAY_OGR_START, pCreature, pPlayer);
         }
     }
@@ -451,7 +457,7 @@ bool QuestAccept_npc_ogron(Player* pPlayer, Creature* pCreature, const Quest* pQ
     return true;
 }
 
-CreatureAI* GetAI_npc_ogron(Creature* pCreature)
+UnitAI* GetAI_npc_ogron(Creature* pCreature)
 {
     return new npc_ogronAI(pCreature);
 }
@@ -462,10 +468,6 @@ CreatureAI* GetAI_npc_ogron(Creature* pCreature)
 
 enum
 {
-    SAY_PROGRESS_1_TER          = -1000411,
-    SAY_PROGRESS_2_HEN          = -1000412,
-    SAY_PROGRESS_3_TER          = -1000413,
-    SAY_PROGRESS_4_TER          = -1000414,
     EMOTE_SURRENDER             = -1000415,
 
     QUEST_MISSING_DIPLO_PT16    = 1324,
@@ -473,51 +475,152 @@ enum
 
     NPC_SENTRY                  = 5184,                     // helps hendel
     NPC_JAINA                   = 4968,                     // appears once hendel gives up
-    NPC_TERVOSH                 = 4967
+    NPC_TERVOSH                 = 4967,
+    NPC_PAINED                  = 4965,
+
+    SPELL_TELEPORT_VISUAL       = 12980,
+    SPELL_TELEPORT              = 7079
 };
 
-// TODO: develop this further, end event not created
+struct Location
+{
+    float fX, fY, fZ, fO;
+    float fDestX, fDestY, fDestZ;
+    uint32 uiEntry;
+};
+
+const Location lOutroSpawns[] =
+{
+    {
+        -2857.604492f, -3354.784912f, 35.369640f, 3.16604f,
+        -2881.546631f, -3346.477539f, 34.143719f,
+        NPC_TERVOSH
+    },
+    {
+        -2858.120117f, -3358.469971f, 36.086300f, 3.16604f,
+        -2879.697998f, -3347.789063f, 34.772892f,
+        NPC_JAINA
+    },
+    {
+        -2857.379883f, -3351.370117f, 34.178001f, 3.16604f,
+        -2879.959961f, -3344.469971f, 34.670502f,
+        NPC_PAINED
+    }
+};
+
+const float fSentryFleePoint[] {-2917.56f, -3329.90f, 30.37f};
+
 struct npc_private_hendelAI : public ScriptedAI
 {
     npc_private_hendelAI(Creature* pCreature) : ScriptedAI(pCreature) { Reset(); }
 
     void Reset() override {}
 
+    ObjectGuid guidPlayer;
+
     void AttackedBy(Unit* pAttacker) override
     {
         if (m_creature->getVictim())
             return;
 
-        if (m_creature->IsFriendlyTo(pAttacker))
+        if (!m_creature->CanAttackNow(pAttacker))
             return;
 
         AttackStart(pAttacker);
     }
 
-    void DamageTaken(Unit* pDoneBy, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    void SpellHit(Unit* /*pCaster*/, const SpellEntry* pSpell) override
     {
-        if (uiDamage > m_creature->GetHealth() || m_creature->GetHealthPercent() < 20.0f)
+        // If Private Hendel is hit by spell Teleport (from DBScript)
+        // this means it is time to grant quest credit to the player previously stored to this intend
+        if (pSpell->Id == SPELL_TELEPORT)
         {
-            uiDamage = 0;
+            if (Player* pPlayer = m_creature->GetMap()->GetPlayer(guidPlayer))
+                pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_MISSING_DIPLO_PT16, m_creature);
+        }
+    }
 
+    void DamageTaken(Unit* pDoneBy, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
+    {
+        if (damage > m_creature->GetHealth() || m_creature->GetHealthPercent() < 20.0f)
+        {
             if (Player* pPlayer = pDoneBy->GetBeneficiaryPlayer())
-                pPlayer->GroupEventHappens(QUEST_MISSING_DIPLO_PT16, m_creature);
+            {
+                if (pPlayer->GetQuestStatus(QUEST_MISSING_DIPLO_PT16) == QUEST_STATUS_INCOMPLETE)
+                    guidPlayer = pPlayer->GetObjectGuid();  // Store the player to give quest credit later
+            }
+
+            damage = 0;
 
             DoScriptText(EMOTE_SURRENDER, m_creature);
             EnterEvadeMode();
+
+            // Make the two sentries flee and despawn
+            CreatureList lSentryList;
+            GetCreatureListWithEntryInGrid(lSentryList, m_creature, NPC_SENTRY, 40.0f);
+
+            for (CreatureList::const_iterator itr = lSentryList.begin(); itr != lSentryList.end(); ++itr)
+            {
+                if ((*itr)->isAlive())
+                {
+                    (*itr)->RemoveAllAurasOnEvade();
+                    (*itr)->CombatStop(true);
+                    (*itr)->SetWalk(false);
+                    (*itr)->GetMotionMaster()->MovePoint(0, fSentryFleePoint[0], fSentryFleePoint[1], fSentryFleePoint[2]);
+                    (*itr)->ForcedDespawn(4000);
+                }
+            }
+
+            // Summon Jaina Proudmoore, Archmage Tervosh and Pained
+            for (const auto& lOutroSpawn : lOutroSpawns)
+            {
+                Creature* pCreature = m_creature->SummonCreature(lOutroSpawn.uiEntry, lOutroSpawn.fX, lOutroSpawn.fY, lOutroSpawn.fZ, lOutroSpawn.fO, TEMPSPAWN_TIMED_DESPAWN, 3 * MINUTE * IN_MILLISECONDS, false, true);
+                if (pCreature)
+                {
+                    pCreature->CastSpell(pCreature, SPELL_TELEPORT_VISUAL, TRIGGERED_NONE);
+                    pCreature->GetMotionMaster()->MovePoint(0, lOutroSpawn.fDestX, lOutroSpawn.fDestY, lOutroSpawn.fDestZ);
+
+                    // Exception case for Archmage Tervosh: the outro event is a simple speech with visual spell cast
+                    // so it will be handled by a DBScript held by NPC Archmage Tervosh
+                    if (pCreature->GetEntry() == NPC_TERVOSH)
+                    {
+                        // Remove Gossip and Quest Giver flag from now, they will be re-added later to Archmage Tervosh in DBScript
+                        pCreature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER | UNIT_NPC_FLAG_GOSSIP);
+                        // The DBScript will be done here
+                        pCreature->GetMotionMaster()->MoveWaypoint(0);
+                    }
+                }
+            }
         }
     }
 };
 
-bool QuestAccept_npc_private_hendel(Player* /*pPlayer*/, Creature* pCreature, const Quest* pQuest)
+bool QuestAccept_npc_private_hendel(Player* pPlayer, Creature* pCreature, const Quest* pQuest)
 {
     if (pQuest->GetQuestId() == QUEST_MISSING_DIPLO_PT16)
+    {
         pCreature->SetFactionTemporary(FACTION_HOSTILE, TEMPFACTION_RESTORE_COMBAT_STOP | TEMPFACTION_RESTORE_RESPAWN);
+        pCreature->AI()->AttackStart(pPlayer);
+
+        // Find the nearby sentries in order to make them attack
+        // The two sentries are linked to Private Hendel in DB to ensure they respawn together
+        CreatureList lSentryList;
+        GetCreatureListWithEntryInGrid(lSentryList, pCreature, NPC_SENTRY, 40.0f);
+
+        for (CreatureList::const_iterator itr = lSentryList.begin(); itr != lSentryList.end(); ++itr)
+        {
+            if ((*itr)->isAlive())
+            {
+                (*itr)->SetFactionTemporary(FACTION_HOSTILE, TEMPFACTION_RESTORE_COMBAT_STOP | TEMPFACTION_RESTORE_RESPAWN);
+                (*itr)->AI()->AttackStart(pPlayer);
+            }
+        }
+    }
 
     return true;
 }
 
-CreatureAI* GetAI_npc_private_hendel(Creature* pCreature)
+UnitAI* GetAI_npc_private_hendel(Creature* pCreature)
 {
     return new npc_private_hendelAI(pCreature);
 }
@@ -567,7 +670,7 @@ struct npc_stinky_ignatzAI : public npc_escortAI
         }
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
     {
         if (eventType == AI_EVENT_START_ESCORT && pInvoker->GetTypeId() == TYPEID_PLAYER)
         {
@@ -612,7 +715,7 @@ struct npc_stinky_ignatzAI : public npc_escortAI
             case 39:
                 if (Player* pPlayer = GetPlayerForEscort())
                 {
-                    pPlayer->GroupEventHappens(pPlayer->GetTeam() == ALLIANCE ? QUEST_ID_STINKYS_ESCAPE_ALLIANCE : QUEST_ID_STINKYS_ESCAPE_HORDE, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(pPlayer->GetTeam() == ALLIANCE ? QUEST_ID_STINKYS_ESCAPE_ALLIANCE : QUEST_ID_STINKYS_ESCAPE_HORDE, m_creature);
                     DoScriptText(SAY_STINKY_END, m_creature, pPlayer);
                 }
                 break;
@@ -631,7 +734,7 @@ struct npc_stinky_ignatzAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_stinky_ignatz(Creature* pCreature)
+UnitAI* GetAI_npc_stinky_ignatz(Creature* pCreature)
 {
     return new npc_stinky_ignatzAI(pCreature);
 }
@@ -643,6 +746,40 @@ bool QuestAccept_npc_stinky_ignatz(Player* pPlayer, Creature* pCreature, const Q
 
     return true;
 }
+
+/*######
+## at_sentry_point
+######*/
+
+enum SentryPoint
+{
+    QUEST_MISSING_DIPLO_PT14    = 1265,
+    SPELL_TELEPORT_VISUAL_2     = 799,  // TODO Find the correct spell
+    NPC_SENTRY_POINT_GUARD      = 5085
+};
+
+bool AreaTrigger_at_sentry_point(Player* pPlayer, const AreaTriggerEntry* /*pAt*/)
+{
+    QuestStatus quest_status = pPlayer->GetQuestStatus(QUEST_MISSING_DIPLO_PT14);
+    if (pPlayer->isDead() || quest_status == QUEST_STATUS_NONE || quest_status == QUEST_STATUS_COMPLETE)
+        return false;
+
+    if (!GetClosestCreatureWithEntry(pPlayer, NPC_TERVOSH, 100.0f))
+    {
+        if (Creature* pTervosh = pPlayer->SummonCreature(NPC_TERVOSH, -3476.51f, -4105.94f, 17.1f, 5.3816f, TEMPSPAWN_TIMED_DESPAWN, 60000))
+        {
+            pTervosh->CastSpell(pTervosh, SPELL_TELEPORT_VISUAL_2, TRIGGERED_OLD_TRIGGERED);
+
+            if (Creature* pGuard = GetClosestCreatureWithEntry(pTervosh, NPC_SENTRY_POINT_GUARD, 15.0f))
+            {
+                pGuard->SetFacingToObject(pTervosh);
+                pGuard->HandleEmote(EMOTE_ONESHOT_SALUTE);
+            }
+        }
+    }
+
+    return true;
+};
 
 void AddSC_dustwallow_marsh()
 {
@@ -670,5 +807,10 @@ void AddSC_dustwallow_marsh()
     pNewScript->Name = "npc_stinky_ignatz";
     pNewScript->GetAI = &GetAI_npc_stinky_ignatz;
     pNewScript->pQuestAcceptNPC = &QuestAccept_npc_stinky_ignatz;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "at_sentry_point";
+    pNewScript->pAreaTrigger = &AreaTrigger_at_sentry_point;
     pNewScript->RegisterSelf();
 }

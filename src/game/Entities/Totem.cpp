@@ -37,10 +37,13 @@ bool Totem::Create(uint32 guidlow, CreatureCreatePos& cPos, CreatureInfo const* 
 {
     SetMap(cPos.GetMap());
 
-    Team team = owner->GetTypeId() == TYPEID_PLAYER ? ((Player*)owner)->GetTeam() : TEAM_NONE;
-
-    if (!CreateFromProto(guidlow, cinfo, team))
+    if (!CreateFromProto(guidlow, cinfo))
         return false;
+
+    // special model selection case for totems
+    if (owner->GetTypeId() == TYPEID_PLAYER && static_cast<Player*>(owner)->GetTeam() == ALLIANCE)
+        if (uint32 modelid_team = sObjectMgr.GetCreatureModelOtherTeamModel(GetDisplayId()))
+            SetDisplayId(modelid_team);
 
     cPos.SelectFinalPoint(this);
 
@@ -66,7 +69,7 @@ bool Totem::Create(uint32 guidlow, CreatureCreatePos& cPos, CreatureInfo const* 
     return true;
 }
 
-void Totem::Update(uint32 update_diff, uint32 time)
+void Totem::Update(const uint32 diff)
 {
     Unit* owner = GetOwner();
     if (!owner || !owner->isAlive() || !isAlive())
@@ -75,15 +78,15 @@ void Totem::Update(uint32 update_diff, uint32 time)
         return;
     }
 
-    if (m_duration <= update_diff)
+    if (m_duration <= diff)
     {
         UnSummon();                                         // remove self
         return;
     }
     else
-        m_duration -= update_diff;
+        m_duration -= diff;
 
-    Creature::Update(update_diff, time);
+    Creature::Update(diff);
 }
 
 void Totem::Summon(Unit* owner)
@@ -118,7 +121,7 @@ void Totem::UnSummon()
 {
     SendObjectDeSpawnAnim(GetObjectGuid());
 
-    CombatStop();
+    CombatStop(true);
     RemoveAurasDueToSpell(GetSpell());
 
     if (Unit* owner = GetOwner())
@@ -159,11 +162,19 @@ void Totem::SetTypeBySummonSpell(SpellEntry const* spellProto)
     if (totemSpell)
     {
         // If spell have cast time -> so its active totem
-        if (GetSpellCastTime(totemSpell))
+        if (GetSpellCastTime(totemSpell, this))
             m_type = TOTEM_ACTIVE;
     }
     if (spellProto->SpellIconID == 2056)
         m_type = TOTEM_STATUE;                              // Jewelery statue
+}
+
+Player* Totem::GetSpellModOwner() const
+{
+    Unit* owner = GetOwner();
+    if (owner && owner->GetTypeId() == TYPEID_PLAYER)
+        return static_cast<Player*>(owner);
+    return nullptr;
 }
 
 float Totem::GetCritChance(WeaponAttackType attackType) const
@@ -182,7 +193,7 @@ float Totem::GetCritChance(SpellSchoolMask schoolMask) const
     return Creature::GetCritChance(schoolMask);
 }
 
-float Totem::GetCritMultiplier(SpellSchoolMask dmgSchoolMask, uint32 creatureTypeMask, const SpellEntry *spell, bool heal) const
+float Totem::GetCritMultiplier(SpellSchoolMask dmgSchoolMask, uint32 creatureTypeMask, const SpellEntry* spell, bool heal) const
 {
     // Totems use owner's crit multiplier
     if (const Unit* owner = GetOwner())

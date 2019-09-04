@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "blackrock_spire.h"
 
 enum
@@ -77,6 +77,7 @@ struct boss_pyroguard_emberseerAI : public ScriptedAI
         m_uiGrowingStacks       = 0;
 
         m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+        m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
     }
 
     void JustDied(Unit* /*pKiller*/) override
@@ -89,6 +90,12 @@ struct boss_pyroguard_emberseerAI : public ScriptedAI
     {
         if (m_pInstance)
             m_pInstance->SetData(TYPE_EMBERSEER, FAIL);
+    }
+
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* /*invoker*/, uint32 /*miscValue*/) override
+    {
+        if (eventType == AI_EVENT_CUSTOM_A)
+            DoHandleEmberseerGrowing();
     }
 
     // Wrapper to handle the transformation
@@ -117,6 +124,7 @@ struct boss_pyroguard_emberseerAI : public ScriptedAI
             }
 
             m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+            m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
         }
     }
 
@@ -186,30 +194,15 @@ struct boss_pyroguard_emberseerAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_boss_pyroguard_emberseer(Creature* pCreature)
+UnitAI* GetAI_boss_pyroguard_emberseer(Creature* pCreature)
 {
     return new boss_pyroguard_emberseerAI(pCreature);
 }
 
-bool EffectDummyCreature_pyroguard_emberseer(Unit* /*pCaster*/, uint32 uiSpellId, SpellEffectIndex uiEffIndex, Creature* pCreatureTarget, ObjectGuid /*originalCasterGuid*/)
-{
-    // always check spellid and effectindex
-    if (uiSpellId == SPELL_GROWING && uiEffIndex == EFFECT_INDEX_0)
-    {
-        if (boss_pyroguard_emberseerAI* pEmberseerAI = dynamic_cast<boss_pyroguard_emberseerAI*>(pCreatureTarget->AI()))
-            pEmberseerAI->DoHandleEmberseerGrowing();
-    }
-
-    return false;
-}
-
 void AddSC_boss_pyroguard_emberseer()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "boss_pyroguard_emberseer";
     pNewScript->GetAI = &GetAI_boss_pyroguard_emberseer;
-    pNewScript->pEffectDummyNPC = &EffectDummyCreature_pyroguard_emberseer;
     pNewScript->RegisterSelf();
 }

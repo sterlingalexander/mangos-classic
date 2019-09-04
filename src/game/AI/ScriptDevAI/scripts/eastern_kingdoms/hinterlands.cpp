@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+#include "AI/ScriptDevAI/include/precompiled.h"/* ContentData
 npc_00x09hl
 npc_rinji
 EndContentData */
@@ -54,11 +54,15 @@ struct npc_00x09hlAI : public npc_escortAI
     npc_00x09hlAI(Creature* pCreature) : npc_escortAI(pCreature) { Reset(); }
 
     uint8 m_uiSummonCount;
+    GuidList m_lSummonsList;
 
     void Reset() override
     {
         if (!HasEscortState(STATE_ESCORT_ESCORTING))
+        {
             m_uiSummonCount = 0;
+            m_creature->SetStandState(UNIT_STAND_STATE_DEAD);
+        }
     }
 
     void WaypointReached(uint32 uiPointId) override
@@ -74,7 +78,7 @@ struct npc_00x09hlAI : public npc_escortAI
             case 64:
                 DoScriptText(SAY_OOX_END, m_creature);
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_RESQUE_OOX_09, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_RESQUE_OOX_09, m_creature);
                 break;
         }
     }
@@ -110,9 +114,6 @@ struct npc_00x09hlAI : public npc_escortAI
                 }
                 break;
         }
-
-        // make sure we always have the right stand state
-        m_creature->SetStandState(UNIT_STAND_STATE_STAND);
     }
 
     void Aggro(Unit* pWho) override
@@ -126,6 +127,18 @@ struct npc_00x09hlAI : public npc_escortAI
     void JustSummoned(Creature* pSummoned) override
     {
         pSummoned->GetMotionMaster()->MovePoint(0, m_creature->GetPositionX(), m_creature->GetPositionY(), m_creature->GetPositionZ());
+        m_lSummonsList.push_back(pSummoned->GetObjectGuid());
+    }
+
+    void JustDied(Unit* pKiller) override
+    {
+        for (GuidList::const_iterator itr = m_lSummonsList.begin(); itr != m_lSummonsList.end(); ++itr)
+        {
+            if (Creature* pSummoned = m_creature->GetMap()->GetCreature(*itr))
+                pSummoned->ForcedDespawn();
+        }
+
+        npc_escortAI::JustDied(pKiller);
     }
 };
 
@@ -133,10 +146,10 @@ bool QuestAccept_npc_00x09hl(Player* pPlayer, Creature* pCreature, const Quest* 
 {
     if (pQuest->GetQuestId() == QUEST_RESQUE_OOX_09)
     {
-        pCreature->SetStandState(UNIT_STAND_STATE_STAND);
-        pCreature->SetFactionTemporary(pPlayer->GetTeam() == ALLIANCE ? FACTION_ESCORT_A_PASSIVE : FACTION_ESCORT_H_PASSIVE, TEMPFACTION_RESTORE_RESPAWN);
-
         DoScriptText(SAY_OOX_START, pCreature, pPlayer);
+        pCreature->SetActiveObjectState(true);
+        pCreature->SetStandState(UNIT_STAND_STATE_STAND);
+        pCreature->SetFactionTemporary(FACTION_ESCORT_N_FRIEND_ACTIVE, TEMPFACTION_RESTORE_RESPAWN | TEMPFACTION_TOGGLE_IMMUNE_TO_NPC);
 
         if (npc_00x09hlAI* pEscortAI = dynamic_cast<npc_00x09hlAI*>(pCreature->AI()))
             pEscortAI->Start(false, pPlayer, pQuest);
@@ -144,7 +157,7 @@ bool QuestAccept_npc_00x09hl(Player* pPlayer, Creature* pCreature, const Quest* 
     return true;
 }
 
-CreatureAI* GetAI_npc_00x09hl(Creature* pCreature)
+UnitAI* GetAI_npc_00x09hl(Creature* pCreature)
 {
     return new npc_00x09hlAI(pCreature);
 }
@@ -275,7 +288,7 @@ struct npc_rinjiAI : public npc_escortAI
                 break;
             case 17:
                 DoScriptText(SAY_RIN_COMPLETE, m_creature, pPlayer);
-                pPlayer->GroupEventHappens(QUEST_RINJI_TRAPPED, m_creature);
+                pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_RINJI_TRAPPED, m_creature);
                 SetRun();
                 m_uiPostEventCount = 1;
                 break;
@@ -333,20 +346,20 @@ bool QuestAccept_npc_rinji(Player* pPlayer, Creature* pCreature, const Quest* pQ
 
         if (npc_rinjiAI* pEscortAI = dynamic_cast<npc_rinjiAI*>(pCreature->AI()))
             pEscortAI->Start(false, pPlayer, pQuest);
+
+        pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
     }
     return true;
 }
 
-CreatureAI* GetAI_npc_rinji(Creature* pCreature)
+UnitAI* GetAI_npc_rinji(Creature* pCreature)
 {
     return new npc_rinjiAI(pCreature);
 }
 
 void AddSC_hinterlands()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "npc_00x09hl";
     pNewScript->GetAI = &GetAI_npc_00x09hl;
     pNewScript->pQuestAcceptNPC = &QuestAccept_npc_00x09hl;

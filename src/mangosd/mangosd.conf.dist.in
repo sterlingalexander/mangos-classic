@@ -3,7 +3,7 @@
 #####################################
 
 [MangosdConf]
-ConfVersion=2016101401
+ConfVersion=2019061401
 
 ###################################################################################################################
 # CONNECTIONS AND DIRECTORIES
@@ -52,7 +52,7 @@ ConfVersion=2016101401
 #        Port on which the server will listen
 #
 #    BindIP
-#        Bind World Server to IP/hostname
+#        Bind World Server to specific IP address
 #        This option is useful for running multiple worldd/realmd instances
 #        on different IP addresses using default ports.
 #        DO NOT CHANGE THIS UNLESS YOU _REALLY_ KNOW WHAT YOU'RE DOING
@@ -62,9 +62,9 @@ ConfVersion=2016101401
 RealmID = 1
 DataDir = "."
 LogsDir = ""
-LoginDatabaseInfo     = "127.0.0.1;3306;mangos;mangos;realmd"
-WorldDatabaseInfo     = "127.0.0.1;3306;mangos;mangos;mangos"
-CharacterDatabaseInfo = "127.0.0.1;3306;mangos;mangos;characters"
+LoginDatabaseInfo     = "127.0.0.1;3306;mangos;mangos;classicrealmd"
+WorldDatabaseInfo     = "127.0.0.1;3306;mangos;mangos;classicmangos"
+CharacterDatabaseInfo = "127.0.0.1;3306;mangos;mangos;classiccharacters"
 LoginDatabaseConnections = 1
 WorldDatabaseConnections = 1
 CharacterDatabaseConnections = 1
@@ -303,6 +303,7 @@ MaxWhoListReturns = 49
 #    LogFilter_Pathfinding
 #    LogFilter_MapsLoading
 #    LogFilter_EventAiDev
+#    LogFilter_DbScriptDev
 #        Log filters (active by default - meaning: the filter is active, hence the log is not displayed)
 #        Default: 1 - not include with any log level
 #                 0 - include in log if log level permit
@@ -384,7 +385,7 @@ MaxWhoListReturns = 49
 
 LogSQL = 1
 PidFile = ""
-LogLevel = 3
+LogLevel = 1
 LogTime = 0
 LogFile = "Server.log"
 LogTimestamp = 0
@@ -397,6 +398,7 @@ LogFilter_DbStrictedCheck = 1
 LogFilter_Pathfinding = 1
 LogFilter_MapsLoading = 1
 LogFilter_EventAiDev = 1
+LogFilter_DbScriptDev = 1
 LogFilter_PeriodicAffects = 0
 LogFilter_PlayerMoves = 1
 LogFilter_SQLText = 1
@@ -563,6 +565,11 @@ LogColors = ""
 #        Enable or disable instant logout for security level (0..4) or high (NOT in combat/while dueling/while falling)
 #        Default: 1 (Mods/GMs/Admins)
 #
+#    LongFlightPathsPersistence
+#        Controls whether logging out in multi-destination taxi flight will resume entire flight or the nearest destination only.
+#        Default: 0 (false)
+#                 1 (true)
+#
 #    AllFlightPaths
 #        Players will start with all flight paths (Note: ALL flight paths, not only player's team)
 #        Default: 0 (true)
@@ -604,6 +611,11 @@ LogColors = ""
 #        Default: 0 (false)
 #                 1 (true)
 #
+#    Instance.StrictCombatLockdown
+#        This setting determines whether its possible to leave combat mode through additional means (such as Feign Death) when zone is set in combat.
+#        Default: 0 (false, drop combat, default pre-2.3.0)
+#                 1 (true, combat persists, default post-2.3.0)
+#
 #    Instance.ResetTimeHour
 #        The hour of the day (0-23) when the global instance resets occur.
 #        Default: 4
@@ -631,7 +643,7 @@ LogColors = ""
 #                 1 (allowed)
 #
 #    Group.OfflineLeaderDelay
-#        A grace period for an offline group leader to reconnect before tranfering leadership to a next suitable member of the group (in secs) 
+#        A grace period for an offline group leader to reconnect before tranfering leadership to a next suitable member of the group (in secs)
 #        Default: 300 (5 minutes)
 #                   0 (Do not transfer group leadership)
 #
@@ -641,32 +653,20 @@ LogColors = ""
 #        You can set it to very high value to prevent oldest guild events to be rewritten by latest guild events - but it can slow down performance
 #        Default: 100
 #
-#    TimerBar.Fatigue.GMLevel
-#        Disable/enable fatigue for security level (0..4) or high
-#        Default: 4 (None)
-#
-#    TimerBar.Fatigue.Max
+#    MirrorTimer.Fatigue.Max
 #        Fatigue max timer value (in secs)
 #        Default: 60 (1 minute)
-#                  0 (instant death)
+#                  0 (instant exhaustion damage start)
 #
-#    TimerBar.Breath.GMLevel
-#        Disable/enable waterbreathing for security level (0..4) or high
-#        Default: 4 (None)
-#
-#    TimerBar.Breath.Max
+#    MirrorTimer.Breath.Max
 #        Waterbreathing max timer value (in secs)
-#        Default: 180
-#                   0 (instant underwater breathing damage start)
+#        Default: 60
+#                  0 (instant underwater breathing damage start)
 #
-#    TimerBar.Fire.GMLevel
-#        Disable/enable lava fire damage for security level (0..4) or high
-#        Default: 4 (None)
-#
-#    TimerBar.Fire.Max
-#        Lava damage delay max timer value (in secs)
+#    MirrorTimer.Environmental.Max
+#        Generic environmental (lava/slime/etc) damage delay max timer value (in secs)
 #        Default:  1
-#                  0 (instant in lava damage start)
+#                  0 (instant in liquid damage start)
 #
 #    MaxPrimaryTradeSkill
 #        Max count that player can learn the primary trade skill.
@@ -703,9 +703,14 @@ LogColors = ""
 #        Default: 10
 #
 #    PetUnsummonAtMount
-#        Persmanent pet will unsummoned at player mount
+#        Permanent pet will unsummoned at player mount
 #        Default: 0 - not unsummon
 #                 1 - unsummon for any mount
+#
+#    PetAttackFromBehind
+#        Player controlled pet will attack from behind
+#        Default: 0 - Engage from any angle
+#                 1 - Engage from behind
 #
 #    Event.Announce
 #        Default: 0 (false)
@@ -759,6 +764,7 @@ StartHonorPoints = 0
 MinHonorKills = 15
 MaintenanceDay = 3
 InstantLogout = 1
+LongFlightPathsPersistence = 0
 AllFlightPaths = 0
 AlwaysMaxSkillForLevel = 0
 ActivateWeather = 1
@@ -767,6 +773,7 @@ MaxSpellCastsInChain = 20
 RabbitDay = 0
 Instance.IgnoreLevel = 0
 Instance.IgnoreRaid = 0
+Instance.StrictCombatLockdown = 0
 Instance.ResetTimeHour = 4
 Instance.UnloadDelay = 1800000
 Quests.LowLevelHideDiff = 4
@@ -774,12 +781,9 @@ Quests.HighLevelHideDiff = 7
 Quests.IgnoreRaid = 0
 Group.OfflineLeaderDelay = 300
 Guild.EventLogRecordsCount = 100
-TimerBar.Fatigue.GMLevel = 4
-TimerBar.Fatigue.Max = 60
-TimerBar.Breath.GMLevel = 4
-TimerBar.Breath.Max = 60
-TimerBar.Fire.GMLevel = 4
-TimerBar.Fire.Max = 1
+MirrorTimer.Fatigue.Max = 60
+MirrorTimer.Breath.Max = 60
+MirrorTimer.Environmental.Max = 1
 MaxPrimaryTradeSkill = 2
 TradeSkill.GMIgnore.MaxPrimarySkillsCount = 4
 TradeSkill.GMIgnore.Level = 4
@@ -789,6 +793,7 @@ MaxGroupXPDistance = 74
 MailDeliveryDelay = 3600
 MassMailer.SendPerTick = 10
 PetUnsummonAtMount = 0
+PetAttackFromBehind = 0
 Event.Announce = 0
 BeepAtStart = 1
 ShowProgressBars = 0
@@ -811,8 +816,14 @@ PlayerCommands = 1
 #    AllowTwoSide.Interaction.Trade
 #    AllowTwoSide.Interaction.Auction
 #    AllowTwoSide.Interaction.Mail
-#        Allow or not common :chat(say,yell);channel(chat)group(join)guild(join);trade with different team,
-#        merge all auction houses for players from different teams, send mail to different team.
+#        Allow or disallow players from different teams to:
+#        - chat with each other (say, yell);
+#        - have merged chat channels;
+#        - join each other's groups;
+#        - join each other's guilds;
+#        - trade with each other when not in group;
+#        - have merged auction house listings;
+#        - send in-game mail;
 #        Default: 0 (Not allowed)
 #                 1 (Allowed)
 #
@@ -891,6 +902,12 @@ TalentsInspecting = 1
 #        Default: 1 (show)
 #                 0 (not show)
 #
+#    Corpse.AllowAllItemsShowInMasterLoot
+#        In master loot mode every one can see the loot content under or over treshold
+#        Only the master loot can still distrube it
+#                 1 (show)
+#        Default: 0 (not show)
+#
 #    Corpse.Decay.NORMAL
 #    Corpse.Decay.RARE
 #    Corpse.Decay.ELITE
@@ -958,6 +975,7 @@ CreatureFamilyAssistanceDelay = 1500
 CreatureFamilyFleeDelay = 7000
 WorldBossLevelDiff = 3
 Corpse.EmptyLootShow = 1
+Corpse.AllowAllItemsShowInMasterLoot = 1
 Corpse.Decay.NORMAL = 300
 Corpse.Decay.RARE = 900
 Corpse.Decay.ELITE = 600
@@ -1120,34 +1138,30 @@ GM.InvisibleAura         = 31748
 ###################################################################################################################
 # VISIBILITY AND RADIUSES
 #
-#    Visibility.GroupMode
-#        Group visibility modes
-#        Default: 0 (standard setting: only members from same group can 100% auto detect invisible player)
-#                 1 (raid members 100% auto detect invisible player from same raid)
-#                 2 (players from same team can 100% auto detect invisible player)
+#    Visibility.FogOfWar.Stealth
+#        Sets visibility mode for invisible units. Fog Of War settings are not applied to GMs.
+#        Default: 0 (standard setting: players can see invisibile units in their own group)
+#                 1 (players can see same faction invisibile units)
+#
+#    Visibility.FogOfWar.Health
+#        Sets visibility mode for absolute health values. Fog Of War settings are not applied to GMs.
+#        Default: 0 (Pre-3.0 standard setting: players can see health values of units in their own group)
+#                 1 (players can see health values of same faction units)
+#                 2 (Post-3.0 standard setting: players can see health values of all units)
+#
+#    Visibility.FogOfWar.Stats
+#        Sets visibility mode for values of character attributes and attack stats. Fog Of War settings are not applied to GMs.
+#        Default: 0 (standard setting: players can see own values and values of their pets)
+#                 1 (players can see values of same faction units)
+#                 2 (players can see values of all units)
 #
 #    Visibility.Distance.Continents
 #    Visibility.Distance.Instances
 #    Visibility.Distance.BG
 #        Visibility distance for different ingame object in different maps.
-#        Visibility on continents on offy ~90 yards. In BG ~180. For instances default ~120.
-#        Max limited by active player zone: ~ 333
+#        Visibility on continents on offy 100 yards. In BG/Arenas 533. For instances default 170.
+#        Max limited by active player zone: 533
 #        Min limit is max aggro radius (45) * Rate.Creature.Aggro
-#
-#    Visibility.Distance.InFlight
-#        Visible distance for player in flight
-#        Min limit is 0 (not show any objects)
-#
-#    Visibility.Distance.Grey.Unit
-#        Visibility grey distance for creatures/players (fast changing objects)
-#        addition to appropriate object type Visibility.Distance.* use in case visibility removing to
-#        object (except corpse around distances) If D is distance and G is grey distance then object
-#        make visible if distance to it <= D but make non visible if distance > D+G
-#        Default: 1 (yard)
-#
-#    Visibility.Distance.Grey.Object
-#        Visibility grey distance for dynobjects/gameobjects/corpses/creature bodies
-#        Default: 10 (yards)
 #
 #    Visibility.RelocationLowerLimit
 #        Object's visibility update called, when distance between current object's position and position,
@@ -1160,13 +1174,12 @@ GM.InvisibleAura         = 31748
 #
 ###################################################################################################################
 
-Visibility.GroupMode = 0
-Visibility.Distance.Continents    = 90
-Visibility.Distance.Instances     = 120
-Visibility.Distance.BG            = 180
-Visibility.Distance.InFlight      = 100
-Visibility.Distance.Grey.Unit   = 1
-Visibility.Distance.Grey.Object = 10
+Visibility.FogOfWar.Stealth = 0
+Visibility.FogOfWar.Health  = 0
+Visibility.FogOfWar.Stats   = 0
+Visibility.Distance.Continents    = 100
+Visibility.Distance.Instances     = 170
+Visibility.Distance.BGArenas      = 533
 Visibility.RelocationLowerLimit    = 10
 Visibility.AIRelocationNotifyDelay = 1000
 
@@ -1241,12 +1254,12 @@ Visibility.AIRelocationNotifyDelay = 1000
 #         Default: 1
 #
 #    Rate.Reputation.LowLevel.Kill
-#         Reputation Gain form low level kill (grey creture)
+#         Lowest Reputation Gain rate from low level kill
 #         Default: 0.2
 #
 #    Rate.Reputation.LowLevel.Quest
-#         Reputation Gain rate
-#         Default: 1
+#         Lowest Reputation Gain rate from low level quest
+#         Default: 0.2
 #
 #    Rate.InstanceResetTime
 #        Multiplier for the number of days in between global raid/heroic instance resets.
@@ -1364,7 +1377,7 @@ Rate.Mining.Next   = 1
 Rate.Talent = 1
 Rate.Reputation.Gain = 1
 Rate.Reputation.LowLevel.Kill    = 0.2
-Rate.Reputation.LowLevel.Quest   = 1
+Rate.Reputation.LowLevel.Quest   = 0.2
 Rate.InstanceResetTime = 1
 SkillGain.Crafting = 1
 SkillGain.Defense = 1

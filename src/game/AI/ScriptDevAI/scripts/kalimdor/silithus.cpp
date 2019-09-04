@@ -23,7 +23,7 @@ EndScriptData
 
 */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"/* ContentData
+#include "AI/ScriptDevAI/include/precompiled.h"/* ContentData
 npc_anachronos_the_ancient
 EndContentData */
 
@@ -51,6 +51,8 @@ enum
     NPC_QIRAJI_DRONE                    = 15421,
     NPC_QIRAJI_TANK                     = 15422,
     NPC_ANUBISATH_CONQUEROR             = 15424,
+    
+    GO_MERITHRA_WAKE                    = 180604,
 
     QUEST_A_PAWN_ON_THE_ETERNAL_BOARD   = 8519,
 
@@ -95,16 +97,19 @@ enum
     SPELL_RED_DRAGON_TRANSFORM          = 25106,
     SPELL_BLUE_DRAGON_TRANSFORM         = 25107,
     SPELL_BRONZE_DRAGON_TRANSFORM       = 25108,
+    SPELL_MERITHRA_WAKE                 = 25145,            // triggers 25172 on targets
+    SPELL_ARYGOS_VENGEANCE              = 25149,            // triggers 25168 on targets
+    SPELL_CAELESTRASZ_MOLTEN_RAIN       = 25150,            // triggers 25169 & 25170 on targets
+    SPELL_TIME_STOP                     = 25158,            // Anachronos stops the battle - triggers 25171
+    SPELL_HOVER                         = 17131,
 
-    SPELL_MERITHRA_WAKE                 = 25145,            // should trigger 25172 on targets
-    SPELL_ARYGOS_VENGEANCE              = 25149,
-    SPELL_CAELESTRASZ_MOLTEN_RAIN       = 25150,
-
-    SPELL_TIME_STOP                     = 25158,            // Anachronos stops the battle - should trigger 25171
+    // events handled via dbscripts_on_event
     SPELL_GLYPH_OF_WARDING              = 25166,            // Sends event 9427 - should activate Go 176148
     SPELL_PRISMATIC_BARRIER             = 25159,            // Sends event 9425 - should activate Go 176146
     SPELL_CALL_ANCIENTS                 = 25167,            // Sends event 9426 - should activate Go 176147
     SPELL_SHATTER_HAMMER                = 25182,            // Breakes the scepter - needs DB coords
+
+    EQUIP_ID_SCEPTRE                    = 15410,
 
     POINT_ID_DRAGON_ATTACK              = 1,
     POINT_ID_EXIT                       = 2,
@@ -115,6 +120,9 @@ enum
     DATA_HANDLE_SCEPTER                 = 7,        // dummy members - used in dialogue helper
     DATA_MERITHRA_ATTACK                = 8,
     DATA_CAELASTRASZ_ATTACK             = 9,
+    MERITHRA_TAKEOFF                    = 10,
+    ARYGOS_TAKEOFF                      = 11,
+    CAELESTRASZ_TAKEOFF                 = 12,
 
     MAX_DRAGONS                         = 4,
     MAX_CONQUERORS                      = 3,
@@ -124,10 +132,7 @@ enum
 
 /* Known event issues:
  * The Kaldorei and Qiraji soldiers don't have the correct flags and factions in DB
- * The Ahn'Qiraj gate gameobjects are missing from DB
  * The spells used by the dragons upon the Qiraji need core support
- * The script events sent by the spells which close the AQ gate needs DB support
- * Can't make Fandral equip the Scepter when Anachronos handles it to him
  */
 
 static const DialogueEntry aEventDialogue[] =
@@ -144,20 +149,23 @@ static const DialogueEntry aEventDialogue[] =
     {NPC_ANACHRONOS_QUEST_TRIGGER,  0,                          0},     // send Merithra to fight
     {DATA_MERITHRA_ATTACK,          0,                          5000},  // make Merithra wait
     {SAY_MERITHRA_ATTACK_1,         NPC_MERITHRA_OF_THE_DREAM,  1000},
-    {SPELL_GREEN_DRAGON_TRANSFORM,  0,                          6000},
-    {SAY_ARYGOS_ATTACK_2,           NPC_ARYGOS,                 5000},
-    {NPC_ARYGOS,                    0,                          1000},  // send Arygos to fight
-    {POINT_ID_EXIT,                 0,                          4000},  // make Merithra exit
+    {SPELL_GREEN_DRAGON_TRANSFORM,  0,                          4000},
+    {MERITHRA_TAKEOFF,              0,                          2000},
+    {SAY_ARYGOS_ATTACK_2,           NPC_ARYGOS,                 4000},
+    {POINT_ID_EXIT,                 0,                          3000},  // make Merithra exit
+    {NPC_ARYGOS,                    0,                          2000},  // send Arygos to fight
     {SAY_ARYGOS_ATTACK_3,           NPC_ARYGOS,                 4000},
-    {SPELL_BLUE_DRAGON_TRANSFORM,   0,                          5000},
-    {SPELL_ARYGOS_VENGEANCE,        0,                          7000},
-    {POINT_ID_DRAGON_ATTACK,        0,                          1000},  // make Arygos exit
-    {SAY_CAELESTRASZ_ATTACK_4,      NPC_CAELESTRASZ,            5000},
+    {SPELL_BLUE_DRAGON_TRANSFORM,   0,                          4000},
+    {ARYGOS_TAKEOFF,                0,                          2000},
+    {SPELL_ARYGOS_VENGEANCE,        0,                          4000},
+    {POINT_ID_DRAGON_ATTACK,        0,                          3000},  // make Arygos exit
+    {SAY_CAELESTRASZ_ATTACK_4,      NPC_CAELESTRASZ,            3000},
     {NPC_CAELESTRASZ,               0,                          0},     // send Caelestrasz to fight
     {DATA_CAELASTRASZ_ATTACK,       0,                          3000},  // make Caelestrasz wait
     {SAY_CAELESTRASZ_ATTACK_5,      NPC_CAELESTRASZ,            5000},
     {SPELL_RED_DRAGON_TRANSFORM,    0,                          4000},  // transform Caelestrasz
-    {SPELL_CAELESTRASZ_MOLTEN_RAIN, 0,                          6000},  // Caelestrasz casts molten rain
+    {CAELESTRASZ_TAKEOFF,           0,                          2000},
+    {SPELL_CAELESTRASZ_MOLTEN_RAIN, 0,                          4000},  // Caelestrasz casts molten rain
     {SAY_ANACHRONOS_SEAL_1,         NPC_ANACHRONOS_THE_ANCIENT, 5000},
     {SAY_FANDRAL_SEAL_2,            NPC_FANDRAL_STAGHELM,       3000},
     {SAY_ANACHRONOS_SEAL_3,         NPC_ANACHRONOS_THE_ANCIENT, 1000},
@@ -199,6 +207,13 @@ static EventLocations aEternalBoardNPCs[MAX_DRAGONS] =
     { -8034.106f, 1534.224f, 2.609f, 0.290f, NPC_MERITHRA_OF_THE_DREAM},
 };
 
+static EventLocations aQirajiWarriors[MAX_CONQUERORS] =
+{
+    { -8092.12f, 1508.32f, 2.94f, 0.0f, 0 },
+    { -8096.54f, 1525.84f, 2.83f, 0.0f, 0 }, // Also used as an anchor point for the rest of the summons
+    { -8097.81f, 1541.74f, 2.88f, 0.0f, 0 },
+};
+
 static EventLocations aEternalBoardMovement[] =
 {
     { -8159.951f, 1525.241f, 74.994f},          // 0 Flight position for dragons
@@ -211,7 +226,6 @@ static EventLocations aEternalBoardMovement[] =
     { -7997.790f, 1548.664f, 3.738f},           // 7 Fandral exit location
     { -8061.933f, 1496.196f, 2.556f},           // 8 Anachronos launch location
     { -8008.705f, 1446.063f, 44.104f},          // 9 Anachronos flight location
-    { -8085.748f, 1521.484f, 2.624f}            // 10 Anchor point for the army summoning
 };
 
 struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
@@ -225,6 +239,9 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
     uint32 m_uiEventTimer;
 
     uint8 m_uiEventStage;
+
+    uint8 m_uiAliveKaldoreiCount;
+    uint8 m_uiAliveQirajiCount;
 
     ObjectGuid m_fandralGuid;
     ObjectGuid m_merithraGuid;
@@ -240,6 +257,12 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
         // We summon the rest of the dragons on timer
         m_uiEventTimer  = 100;
         m_uiEventStage  = 0;
+
+        m_uiAliveKaldoreiCount = 0;
+        m_uiAliveQirajiCount = 0;
+
+        m_creature->SetImmuneToNPC(true);
+        m_creature->SetImmuneToPlayer(true);
     }
 
     void JustDidDialogueStep(int32 iEntry) override
@@ -248,11 +271,9 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
         {
             case NPC_ANACHRONOS_THE_ANCIENT:
                 // Call the other dragons
-                DoSummonDragons();
+                DoInitialSummons();
                 break;
             case EMOTE_ONESHOT_SHOUT:
-                // Summon warriors
-                DoSummonWarriors();
                 m_creature->HandleEmote(EMOTE_ONESHOT_SHOUT);
                 break;
             case SAY_FANDRAL_INTRO_2:
@@ -268,7 +289,7 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                 break;
             case NPC_ANACHRONOS_QUEST_TRIGGER:
                 // Move Merithra to attack
-                if (Creature* pTrigger = GetClosestCreatureWithEntry(m_creature, NPC_ANACHRONOS_QUEST_TRIGGER, 35.0f))
+                if (Creature* pTrigger = GetClosestCreatureWithEntry(m_creature, NPC_ANACHRONOS_QUEST_TRIGGER, 60.0f))
                 {
                     m_triggerGuid = pTrigger->GetObjectGuid();
                     if (Creature* pMerithra = m_creature->GetMap()->GetCreature(m_merithraGuid))
@@ -282,9 +303,42 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                 if (Creature* pMerithra = m_creature->GetMap()->GetCreature(m_merithraGuid))
                     pMerithra->CastSpell(pMerithra, SPELL_GREEN_DRAGON_TRANSFORM, TRIGGERED_NONE);
                 break;
+            case MERITHRA_TAKEOFF:
+                if (Creature* pMerithra = m_creature->GetMap()->GetCreature(m_merithraGuid))
+                {
+                    pMerithra->CastSpell(pMerithra, SPELL_HOVER, TRIGGERED_NONE);
+                    pMerithra->HandleEmote(EMOTE_ONESHOT_LIFTOFF);
+                    pMerithra->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
+                    pMerithra->SetLevitate(true);
+                }
+                break;
             case SAY_ARYGOS_ATTACK_2:
                 if (Creature* pMerithra = m_creature->GetMap()->GetCreature(m_merithraGuid))
+                {
                     pMerithra->CastSpell(pMerithra, SPELL_MERITHRA_WAKE, TRIGGERED_NONE);
+                    GameObjectList lMerithraWakeGOs;
+
+                    GetGameObjectListWithEntryInGrid(lMerithraWakeGOs, pMerithra, GO_MERITHRA_WAKE, 150.0f);
+                    if (!lMerithraWakeGOs.empty())
+                    {
+                        for (GameObjectList::const_iterator itr = lMerithraWakeGOs.begin(); itr != lMerithraWakeGOs.end(); ++itr)
+                        {
+                            if ((*itr)->IsSpawned())
+                                continue;
+
+                            (*itr)->SetRespawnTime(60);
+                            (*itr)->Refresh();
+                        }
+                    }
+                }
+                break;
+            case POINT_ID_EXIT:
+                // Move Merithra to the exit point
+                if (Creature* pMerithra = m_creature->GetMap()->GetCreature(m_merithraGuid))
+                {
+                    pMerithra->GetMotionMaster()->MovePoint(POINT_ID_EXIT, aEternalBoardMovement[0].m_fX, aEternalBoardMovement[0].m_fY, aEternalBoardMovement[0].m_fZ);
+                    pMerithra->ForcedDespawn(9000);
+                }
                 break;
             case NPC_ARYGOS:
                 // Move Arygos to attack
@@ -297,30 +351,32 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                     }
                 }
                 break;
-            case POINT_ID_EXIT:
-                // Move Merithra to the exit point
-                if (Creature* pMerithra = m_creature->GetMap()->GetCreature(m_merithraGuid))
-                {
-                    pMerithra->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
-                    pMerithra->SetLevitate(true);
-                    pMerithra->GetMotionMaster()->MovePoint(POINT_ID_EXIT, aEternalBoardMovement[0].m_fX, aEternalBoardMovement[0].m_fY, aEternalBoardMovement[0].m_fZ);
-                    pMerithra->ForcedDespawn(9000);
-                }
-                break;
             case SPELL_BLUE_DRAGON_TRANSFORM:
                 if (Creature* pArygos = m_creature->GetMap()->GetCreature(m_arygosGuid))
                     pArygos->CastSpell(pArygos, SPELL_BLUE_DRAGON_TRANSFORM, TRIGGERED_NONE);
                 break;
+            case ARYGOS_TAKEOFF:
+                if (Creature* pArygos = m_creature->GetMap()->GetCreature(m_arygosGuid))
+                {
+                    pArygos->CastSpell(pArygos, SPELL_HOVER, TRIGGERED_NONE);
+                    pArygos->HandleEmote(EMOTE_ONESHOT_LIFTOFF);
+                    pArygos->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
+                    pArygos->SetLevitate(true);
+                }
+                break;
             case SPELL_ARYGOS_VENGEANCE:
                 if (Creature* pArygos = m_creature->GetMap()->GetCreature(m_arygosGuid))
+                {
+                    pArygos->HandleEmote(EMOTE_ONESHOT_LIFTOFF);
+                    pArygos->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
+                    pArygos->SetLevitate(true);
                     pArygos->CastSpell(pArygos, SPELL_ARYGOS_VENGEANCE, TRIGGERED_NONE);
+                }
                 break;
             case POINT_ID_DRAGON_ATTACK:
                 // Move Arygos to the exit point
                 if (Creature* pArygos = m_creature->GetMap()->GetCreature(m_arygosGuid))
                 {
-                    pArygos->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
-                    pArygos->SetLevitate(true);
                     pArygos->GetMotionMaster()->MovePoint(POINT_ID_EXIT, aEternalBoardMovement[0].m_fX, aEternalBoardMovement[0].m_fY, aEternalBoardMovement[0].m_fZ);
                     pArygos->ForcedDespawn(9000);
                 }
@@ -340,6 +396,15 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                 if (Creature* pCaelestrasz = m_creature->GetMap()->GetCreature(m_CaelestraszGuid))
                     pCaelestrasz->CastSpell(pCaelestrasz, SPELL_RED_DRAGON_TRANSFORM, TRIGGERED_NONE);
                 break;
+            case CAELESTRASZ_TAKEOFF:
+                if (Creature* pCaelestrasz = m_creature->GetMap()->GetCreature(m_CaelestraszGuid))
+                {
+                    pCaelestrasz->CastSpell(pCaelestrasz, SPELL_HOVER, TRIGGERED_NONE);
+                    pCaelestrasz->HandleEmote(EMOTE_ONESHOT_LIFTOFF);
+                    pCaelestrasz->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
+                    pCaelestrasz->SetLevitate(true);
+                }
+                break;
             case SPELL_CAELESTRASZ_MOLTEN_RAIN:
                 if (Creature* pCaelestrasz = m_creature->GetMap()->GetCreature(m_CaelestraszGuid))
                     pCaelestrasz->CastSpell(pCaelestrasz, SPELL_CAELESTRASZ_MOLTEN_RAIN, TRIGGERED_NONE);
@@ -348,8 +413,6 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                 // Send Caelestrasz on flight
                 if (Creature* pCaelestrasz = m_creature->GetMap()->GetCreature(m_CaelestraszGuid))
                 {
-                    pCaelestrasz->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
-                    pCaelestrasz->SetLevitate(true);
                     pCaelestrasz->GetMotionMaster()->MovePoint(POINT_ID_EXIT, aEternalBoardMovement[0].m_fX, aEternalBoardMovement[0].m_fY, aEternalBoardMovement[0].m_fZ);
                     pCaelestrasz->ForcedDespawn(9000);
                 }
@@ -392,9 +455,12 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                 }
                 break;
             case DATA_HANDLE_SCEPTER:
-                // Give the scepter to Fandral (it should equip it somehow)
+                // Give the scepter to Fandral
                 if (Creature* pFandral = m_creature->GetMap()->GetCreature(m_fandralGuid))
+                {
                     DoScriptText(EMOTE_ANACHRONOS_SCEPTER, m_creature, pFandral);
+                    pFandral->LoadEquipment(EQUIP_ID_SCEPTRE, false);
+                }
                 m_creature->SetStandState(UNIT_STAND_STATE_KNEEL);
                 break;
             case SAY_FANDRAL_EPILOGUE_4:
@@ -407,7 +473,11 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
             case EMOTE_FANDRAL_SHATTER:
                 // Shatter the scepter
                 if (Creature* pFandral = m_creature->GetMap()->GetCreature(m_fandralGuid))
+                {
                     pFandral->CastSpell(pFandral, SPELL_SHATTER_HAMMER, TRIGGERED_NONE);
+                    pFandral->LoadEquipment(0, true);
+                    DoUnsummonArmy();
+                }
                 break;
             case SAY_ANACHRONOS_EPILOGUE_6:
                 if (Creature* pFandral = m_creature->GetMap()->GetCreature(m_fandralGuid))
@@ -444,40 +514,46 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
         }
     }
 
-    void DoSummonDragons()
+    void DoInitialSummons()
     {
-        for (uint8 i = 0; i < MAX_DRAGONS; ++i)
-            m_creature->SummonCreature(aEternalBoardNPCs[i].m_uiEntry, aEternalBoardNPCs[i].m_fX, aEternalBoardNPCs[i].m_fY, aEternalBoardNPCs[i].m_fZ, aEternalBoardNPCs[i].m_fO, TEMPSPAWN_CORPSE_DESPAWN, 0);
+        for (auto& aEternalBoardNPC : aEternalBoardNPCs)
+            m_creature->SummonCreature(aEternalBoardNPC.m_uiEntry, aEternalBoardNPC.m_fX, aEternalBoardNPC.m_fY, aEternalBoardNPC.m_fZ, aEternalBoardNPC.m_fO, TEMPSPAWN_CORPSE_DESPAWN, 0);
 
-        // Also summon the 3 anubisath conquerors
-        float fX, fY, fZ;
+        // Summon Kaldorei fighters
+        DoSummonKaldorei();
+        
+        // Summon Qiraji Fighters
+        DoSummonQiraji();
+
+        // Also summon the 3 Anubisath Conquerors
         for (uint8 i = 0; i < MAX_CONQUERORS; ++i)
-        {
-            m_creature->GetRandomPoint(aEternalBoardMovement[10].m_fX, aEternalBoardMovement[10].m_fY, aEternalBoardMovement[10].m_fZ, 20.0f, fX, fY, fZ);
-            m_creature->SummonCreature(NPC_ANUBISATH_CONQUEROR, fX, fY, fZ, 0, TEMPSPAWN_CORPSE_DESPAWN, 0);
-        }
+            m_creature->SummonCreature(NPC_ANUBISATH_CONQUEROR, aQirajiWarriors[i].m_fX, aQirajiWarriors[i].m_fY, aQirajiWarriors[i].m_fZ, 0, TEMPSPAWN_CORPSE_DESPAWN, 0);
     }
 
-    void DoSummonWarriors()
+    void DoSummonKaldorei()
     {
         float fX, fY, fZ;
         // Summon kaldorei warriors
         for (uint8 i = 0; i < MAX_KALDOREI; ++i)
         {
-            m_creature->GetRandomPoint(aEternalBoardMovement[10].m_fX, aEternalBoardMovement[10].m_fY, aEternalBoardMovement[10].m_fZ, 10.0f, fX, fY, fZ);
+            m_creature->GetRandomPoint(aQirajiWarriors[1].m_fX, aQirajiWarriors[1].m_fY, aQirajiWarriors[1].m_fZ, 20.0f, fX, fY, fZ);
             m_creature->SummonCreature(NPC_KALDOREI_INFANTRY, fX, fY, fZ, 0.0f, TEMPSPAWN_CORPSE_DESPAWN, 0);
         }
+    }
 
+    void DoSummonQiraji()
+    {
+        float fX, fY, fZ;
         // Summon Qiraji warriors
         for (uint8 i = 0; i < MAX_QIRAJI; ++i)
         {
-            m_creature->GetRandomPoint(aEternalBoardMovement[10].m_fX, aEternalBoardMovement[10].m_fY, aEternalBoardMovement[10].m_fZ, 15.0f, fX, fY, fZ);
+            m_creature->GetRandomPoint(aQirajiWarriors[1].m_fX, aQirajiWarriors[1].m_fY, aQirajiWarriors[1].m_fZ, 20.0f, fX, fY, fZ);
             m_creature->SummonCreature(NPC_QIRAJI_WASP, fX, fY, fZ, 0.0f, TEMPSPAWN_CORPSE_DESPAWN, 0);
 
-            m_creature->GetRandomPoint(aEternalBoardMovement[10].m_fX, aEternalBoardMovement[10].m_fY, aEternalBoardMovement[10].m_fZ, 15.0f, fX, fY, fZ);
+            m_creature->GetRandomPoint(aQirajiWarriors[1].m_fX, aQirajiWarriors[1].m_fY, aQirajiWarriors[1].m_fZ, 20.0f, fX, fY, fZ);
             m_creature->SummonCreature(NPC_QIRAJI_DRONE, fX, fY, fZ, 0.0f, TEMPSPAWN_CORPSE_DESPAWN, 0);
 
-            m_creature->GetRandomPoint(aEternalBoardMovement[10].m_fX, aEternalBoardMovement[10].m_fY, aEternalBoardMovement[10].m_fZ, 15.0f, fX, fY, fZ);
+            m_creature->GetRandomPoint(aQirajiWarriors[1].m_fX, aQirajiWarriors[1].m_fY, aQirajiWarriors[1].m_fZ, 20.0f, fX, fY, fZ);
             m_creature->SummonCreature(NPC_QIRAJI_TANK, fX, fY, fZ, 0.0f, TEMPSPAWN_CORPSE_DESPAWN, 0);
         }
     }
@@ -498,27 +574,57 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
         {
             case NPC_FANDRAL_STAGHELM:
                 m_fandralGuid = pSummoned->GetObjectGuid();
+                pSummoned->SetImmuneToNPC(true);
                 break;
             case NPC_MERITHRA_OF_THE_DREAM:
                 m_merithraGuid = pSummoned->GetObjectGuid();
                 pSummoned->SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_NONE);
+                pSummoned->SetImmuneToNPC(true);
                 break;
             case NPC_CAELESTRASZ:
                 m_CaelestraszGuid = pSummoned->GetObjectGuid();
                 pSummoned->SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_NONE);
+                pSummoned->SetImmuneToNPC(true);
                 break;
             case NPC_ARYGOS:
                 m_arygosGuid = pSummoned->GetObjectGuid();
                 pSummoned->SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_NONE);
+                pSummoned->SetImmuneToNPC(true);
                 break;
-            case NPC_ANUBISATH_CONQUEROR:
             case NPC_QIRAJI_WASP:
             case NPC_QIRAJI_DRONE:
             case NPC_QIRAJI_TANK:
+                m_uiAliveQirajiCount++;
+            case NPC_ANUBISATH_CONQUEROR:
+                pSummoned->SetImmuneToPlayer(true);
+                m_lQirajiWarriorsList.push_back(pSummoned->GetObjectGuid());
+                break;
             case NPC_KALDOREI_INFANTRY:
+                m_uiAliveKaldoreiCount++;
                 m_lQirajiWarriorsList.push_back(pSummoned->GetObjectGuid());
                 break;
         }
+    }
+
+    void SummonedCreatureJustDied(Creature* pSummoned) override
+    {
+        switch (pSummoned->GetEntry())
+        {
+            case NPC_QIRAJI_WASP:
+            case NPC_QIRAJI_DRONE:
+            case NPC_QIRAJI_TANK:
+                m_uiAliveQirajiCount--;
+                break;
+            case NPC_KALDOREI_INFANTRY:
+                m_uiAliveKaldoreiCount--;
+                break;
+        }
+
+        if (m_uiAliveQirajiCount < 3)
+            DoSummonQiraji();
+
+        if (m_uiAliveKaldoreiCount < 5)
+            DoSummonKaldorei();
     }
 
     void MovementInform(uint32 uiType, uint32 uiPointId) override
@@ -546,8 +652,11 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                 m_uiEventTimer = 4000;
                 break;
             case POINT_ID_EXIT:
+                m_creature->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
+                m_creature->SetLevitate(true);
                 DoCastSpellIfCan(m_creature, SPELL_BRONZE_DRAGON_TRANSFORM);
-                m_uiEventTimer = 4000;
+                DoCastSpellIfCan(m_creature, SPELL_HOVER);
+                m_uiEventTimer = 1000;
                 break;
         }
     }
@@ -565,7 +674,6 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                     // Face Anachronos and restart the dialogue
                     pSummoned->SetFacingToObject(m_creature);
                     StartNextDialogueText(SAY_FANDRAL_EPILOGUE_7);
-                    DoUnsummonArmy();
                     break;
                 case POINT_ID_SCEPTER_1:
                     pSummoned->GetMotionMaster()->MovePoint(POINT_ID_EPILOGUE, aEternalBoardMovement[4].m_fX, aEternalBoardMovement[4].m_fY, aEternalBoardMovement[4].m_fZ);
@@ -613,7 +721,7 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                     case 2:
                         // Complete quest and despawn gate
                         if (Player* pPlayer = m_creature->GetMap()->GetPlayer(m_playerGuid))
-                            pPlayer->GroupEventHappens(QUEST_A_PAWN_ON_THE_ETERNAL_BOARD, m_creature);
+                            pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_A_PAWN_ON_THE_ETERNAL_BOARD, m_creature);
                         m_creature->SetStandState(UNIT_STAND_STATE_STAND);
                         m_uiEventTimer = 4000;
                         break;
@@ -625,8 +733,6 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
                         break;
                     case 4:
                         // Take off and fly
-                        m_creature->SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
-                        m_creature->SetLevitate(true);
                         m_creature->GetMotionMaster()->MovePoint(0, aEternalBoardMovement[9].m_fX, aEternalBoardMovement[9].m_fY, aEternalBoardMovement[9].m_fZ);
                         m_creature->ForcedDespawn(10000);
                         m_uiEventTimer = 0;
@@ -640,7 +746,7 @@ struct npc_anachronos_the_ancientAI : public ScriptedAI, private DialogueHelper
     }
 };
 
-CreatureAI* GetAI_npc_anachronos_the_ancient(Creature* pCreature)
+UnitAI* GetAI_npc_anachronos_the_ancient(Creature* pCreature)
 {
     return new npc_anachronos_the_ancientAI(pCreature);
 }
@@ -665,11 +771,291 @@ bool QuestAcceptGO_crystalline_tear(Player* pPlayer, GameObject* pGo, const Ques
     return true;
 }
 
+enum
+{
+    SPELL_FOOLS_PLIGHT          = 23504,
+
+    SPELL_SOUL_FLAME            = 23272,
+    SPELL_DREADFUL_FRIGHT       = 23275,
+    SPELL_CREEPING_DOOM         = 23589,
+    SPELL_CRIPPLING_CLIP        = 23279,
+
+    EMOTE_IMMOBILIZED           = -1001252,
+
+    SPELL_FROST_TRAP            = 13810,
+
+    NPC_NELSON_THE_NICE         = 14536,
+    NPC_SOLENOR_THE_SLAYER      = 14530,
+    NPC_CREEPING_DOOM           = 14761,
+    NPC_THE_CLEANER             = 14503,
+
+    QUEST_STAVE_OF_THE_ANCIENTS = 7636
+};
+
+#define GOSSIP_ITEM                 "Show me your real face, demon."
+
+/*#####
+## npc_nelson_the_nice
+######*/
+
+/*#####
+## npc_solenor_the_slayer
+######*/
+
+struct npc_solenorAI : public ScriptedAI
+{
+    npc_solenorAI(Creature* pCreature) : ScriptedAI(pCreature)
+    {
+        m_bTransform = false;
+        m_uiDespawn_Timer = 0;
+        Reset();
+    }
+
+    uint32 m_uiTransform_Timer;
+    uint32 m_uiTransformEmote_Timer;
+    bool m_bTransform;
+
+    ObjectGuid m_hunterGuid;
+    uint32 m_uiDreadfulFright_Timer;
+    uint32 m_uiCreepingDoom_Timer;
+    uint32 m_uiCastSoulFlame_Timer;
+    uint32 m_uiDespawn_Timer;
+
+    void Reset() override
+    {
+        switch (m_creature->GetEntry())
+        {
+            case NPC_NELSON_THE_NICE:
+                m_creature->SetRespawnDelay(35 * MINUTE);
+                m_creature->SetRespawnTime(35 * MINUTE);
+                m_creature->NearTeleportTo(-7724.21f, 1676.43f, 7.0571f, 4.80044f);
+                if (m_creature->GetMotionMaster()->GetCurrentMovementGeneratorType() != WAYPOINT_MOTION_TYPE)
+                {
+                    m_creature->SetDefaultMovementType(WAYPOINT_MOTION_TYPE);
+                    m_creature->GetMotionMaster()->Initialize();
+                }
+
+                m_creature->SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+
+                m_uiTransform_Timer = 10000;
+                m_uiTransformEmote_Timer = 5000;
+                m_bTransform = false;
+                m_uiDespawn_Timer = 0;
+                m_uiCastSoulFlame_Timer = 0;
+                break;
+            case NPC_SOLENOR_THE_SLAYER:
+                if (!m_uiDespawn_Timer)
+                {
+                    m_uiDespawn_Timer = 20 * MINUTE*IN_MILLISECONDS;
+                    m_uiCastSoulFlame_Timer = 150;
+                    DoCastSpellIfCan(m_creature, SPELL_SOUL_FLAME);
+                }
+
+                m_hunterGuid.Clear();
+                m_uiDreadfulFright_Timer = urand(10000, 15000);
+                m_uiCreepingDoom_Timer = urand(3000, 6000);
+                break;
+        }
+    }
+
+    /** Nelson the Nice */
+    void Transform()
+    {
+        m_creature->UpdateEntry(NPC_SOLENOR_THE_SLAYER);
+        Reset();
+    }
+
+    void BeginEvent(ObjectGuid playerGuid)
+    {
+        m_hunterGuid = playerGuid;
+        m_creature->GetMotionMaster()->Clear(false);
+        m_creature->GetMotionMaster()->MoveIdle();
+        m_creature->SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_NONE);
+        m_bTransform = true;
+    }
+
+    /** Solenor the Slayer */
+    void Aggro(Unit* pWho) override
+    {
+        if (pWho->getClass() == CLASS_HUNTER && (m_hunterGuid.IsEmpty() || m_hunterGuid == pWho->GetObjectGuid())/*&& pWho->GetQuestStatus(QUEST_STAVE_OF_THE_ANCIENTS) == QUEST_STATUS_INCOMPLETE*/)
+        {
+            m_hunterGuid = pWho->GetObjectGuid();
+        }
+        else
+            DemonDespawn();
+    }
+
+    void EnterEvadeMode() override
+    {
+        m_creature->RemoveGuardians();
+
+        ScriptedAI::EnterEvadeMode();
+    }
+
+    void JustSummoned(Creature* pSummoned) override
+    {
+        if (m_creature->getVictim())
+            pSummoned->AI()->AttackStart(m_creature->getVictim());
+    }
+
+    void JustDied(Unit* /*pKiller*/) override
+    {
+        uint32 m_respawn_delay_Timer = 2 * HOUR;
+        m_creature->SetRespawnDelay(m_respawn_delay_Timer);
+        m_creature->SetRespawnTime(m_respawn_delay_Timer);
+        m_creature->SaveRespawnTime();
+    }
+
+    void DemonDespawn(bool triggered = true)
+    {
+        m_creature->RemoveGuardians();
+        m_creature->SetRespawnDelay(15 * MINUTE);
+        m_creature->SetRespawnTime(15 * MINUTE);
+        m_creature->SaveRespawnTime();
+
+        if (triggered)
+        {
+            Creature* pCleaner = m_creature->SummonCreature(NPC_THE_CLEANER, m_creature->GetPositionX(), m_creature->GetPositionY(), m_creature->GetPositionZ(), m_creature->GetAngle(m_creature), TEMPSPAWN_DEAD_DESPAWN, 20 * MINUTE*IN_MILLISECONDS);
+            if (pCleaner)
+            {
+                ThreatList const& tList = m_creature->getThreatManager().getThreatList();
+
+                for (auto itr : tList)
+                {
+                    if (Unit* pUnit = m_creature->GetMap()->GetUnit(itr->getUnitGuid()))
+                    {
+                        if (pUnit->isAlive())
+                        {
+                            pCleaner->SetInCombatWith(pUnit);
+                            pCleaner->AddThreat(pUnit);
+                            pCleaner->AI()->AttackStart(pUnit);
+                        }
+                    }
+                }
+            }
+        }
+
+        m_creature->ForcedDespawn();
+    }
+
+    void SpellHit(Unit* /*pCaster*/, const SpellEntry* pSpell) override
+    {
+
+        if (pSpell && pSpell->Id == 14268)   // Wing Clip (Rank 3)
+        {
+            if (DoCastSpellIfCan(m_creature, SPELL_CRIPPLING_CLIP, CAST_TRIGGERED) == CAST_OK)
+                DoScriptText(EMOTE_IMMOBILIZED, m_creature);
+        }
+    }
+
+    void UpdateAI(const uint32 uiDiff) override
+    {
+        /** Nelson the Nice */
+        if (m_bTransform)
+        {
+            if (m_uiTransformEmote_Timer)
+            {
+                if (m_uiTransformEmote_Timer <= uiDiff)
+                {
+                    m_creature->HandleEmote(EMOTE_ONESHOT_LAUGH);
+                    m_uiTransformEmote_Timer = 0;
+                }
+                else
+                    m_uiTransformEmote_Timer -= uiDiff;
+            }
+
+            if (m_uiTransform_Timer < uiDiff)
+            {
+                m_bTransform = false;
+                Transform();
+            }
+            else
+                m_uiTransform_Timer -= uiDiff;
+        }
+
+        /** Solenor the Slayer */
+        if (m_uiDespawn_Timer)
+        {
+            if (m_uiDespawn_Timer <= uiDiff)
+            {
+                if (m_creature->isAlive() && !m_creature->isInCombat())
+                    DemonDespawn(false);
+            }
+            else
+                m_uiDespawn_Timer -= uiDiff;
+        }
+
+        if (m_uiCastSoulFlame_Timer)
+        {
+            if (m_uiCastSoulFlame_Timer <= uiDiff)
+            {
+                // delay this cast so spell animation is visible to the player
+                DoCastSpellIfCan(m_creature, SPELL_SOUL_FLAME);
+                m_uiCastSoulFlame_Timer = 0;
+            }
+            else
+                m_uiCastSoulFlame_Timer -= uiDiff;
+        }
+
+        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+            return;
+
+        if (m_creature->HasAura(SPELL_SOUL_FLAME) && m_creature->HasAura(SPELL_FROST_TRAP))
+            m_creature->RemoveAurasDueToSpell(SPELL_SOUL_FLAME);
+
+        if (m_creature->getThreatManager().getThreatList().size() > 1 /*|| pHunter->isDead()*/)
+            DemonDespawn();
+
+        if (m_uiCreepingDoom_Timer < uiDiff)
+        {
+            DoCastSpellIfCan(m_creature, SPELL_CREEPING_DOOM);
+            m_uiCreepingDoom_Timer = 15000;
+        }
+        else
+            m_uiCreepingDoom_Timer -= uiDiff;
+
+        if (m_uiDreadfulFright_Timer < uiDiff)
+        {
+            if (Unit* pUnit = m_creature->getVictim())
+            {
+                if (m_creature->GetDistance(pUnit, false) > 5.0f)
+                {
+                    if (DoCastSpellIfCan(pUnit, SPELL_DREADFUL_FRIGHT) == CAST_OK)
+                        m_uiDreadfulFright_Timer = urand(15000, 20000);
+                }
+            }
+        }
+        else
+            m_uiDreadfulFright_Timer -= uiDiff;
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+bool GossipHello_npc_solenor(Player* pPlayer, Creature* pCreature)
+{
+    if (pPlayer->GetQuestStatus(QUEST_STAVE_OF_THE_ANCIENTS) == QUEST_STATUS_INCOMPLETE)
+        pPlayer->ADD_GOSSIP_ITEM(0, GOSSIP_ITEM, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
+
+    pPlayer->SEND_GOSSIP_MENU(pPlayer->GetGossipTextId(pCreature), pCreature->GetObjectGuid());
+    return true;
+}
+
+bool GossipSelect_npc_solenor(Player* pPlayer, Creature* pCreature, uint32 /*uiSender*/, uint32 /*uiAction*/)
+{
+    pPlayer->CLOSE_GOSSIP_MENU();
+    ((npc_solenorAI*)pCreature->AI())->BeginEvent(pPlayer->GetObjectGuid());
+    return true;
+}
+
+UnitAI* GetAI_npc_solenor(Creature* pCreature)
+{
+    return new npc_solenorAI(pCreature);
+}
+
 void AddSC_silithus()
 {
-    Script* pNewScript;
-
-    pNewScript = new Script;
+    Script* pNewScript = new Script;
     pNewScript->Name = "npc_anachronos_the_ancient";
     pNewScript->GetAI = &GetAI_npc_anachronos_the_ancient;
     pNewScript->RegisterSelf();
@@ -677,5 +1063,12 @@ void AddSC_silithus()
     pNewScript = new Script;
     pNewScript->Name = "go_crystalline_tear";
     pNewScript->pQuestAcceptGO = &QuestAcceptGO_crystalline_tear;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_solenor"; // npc_solenor_the_slayer
+    pNewScript->GetAI = &GetAI_npc_solenor;
+    pNewScript->pGossipHello = &GossipHello_npc_solenor;
+    pNewScript->pGossipSelect = &GossipSelect_npc_solenor;
     pNewScript->RegisterSelf();
 }

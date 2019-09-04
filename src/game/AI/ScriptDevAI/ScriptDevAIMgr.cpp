@@ -2,7 +2,7 @@
 * This program is free software licensed under GPL version 2
 * Please see the included DOCS/LICENSE.TXT for more information */
 
-#include "AI/ScriptDevAI/PreCompiledHeader.h"
+#include "AI/ScriptDevAI/include/precompiled.h"
 #include "Policies/Singleton.h"
 #include "Config/Config.h"
 #include "Database/DatabaseEnv.h"
@@ -15,7 +15,7 @@
 #include "Entities/Player.h"
 
 #ifdef BUILD_SCRIPTDEV
-  #include "system/ScriptLoader.h"
+#include "system/ScriptLoader.h"
 #endif
 
 INSTANTIATE_SINGLETON_1(ScriptDevAIMgr);
@@ -24,12 +24,12 @@ void FillSpellSummary();
 
 void LoadDatabase()
 {
-        // Load content
-        // pSystemMgr.LoadVersion(); // currently we are not checking for version; function to be completely removed in the future
-        pSystemMgr.LoadScriptTexts();
-        pSystemMgr.LoadScriptTextsCustom();
-        pSystemMgr.LoadScriptGossipTexts();
-        pSystemMgr.LoadScriptWaypoints();
+    // Load content
+    // pSystemMgr.LoadVersion(); // currently we are not checking for version; function to be completely removed in the future
+    pSystemMgr.LoadScriptTexts();
+    pSystemMgr.LoadScriptTextsCustom();
+    pSystemMgr.LoadScriptGossipTexts();
+    pSystemMgr.LoadScriptWaypoints();
 }
 
 //*********************************
@@ -53,7 +53,7 @@ void DoScriptText(int32 iTextEntry, WorldObject* pSource, Unit* pTarget)
     if (iTextEntry >= 0)
     {
         script_error_log("DoScriptText with source entry %u (TypeId=%u, guid=%u) attempts to process text entry %i, but text entry must be negative.",
-            pSource->GetEntry(), pSource->GetTypeId(), pSource->GetGUIDLow(), iTextEntry);
+                         pSource->GetEntry(), pSource->GetTypeId(), pSource->GetGUIDLow(), iTextEntry);
 
         return;
     }
@@ -100,9 +100,9 @@ void DoOrSimulateScriptTextForMap(int32 iTextEntry, uint32 uiCreatureEntry, Map*
     }
 
     debug_log("SD2: DoOrSimulateScriptTextForMap: text entry=%i, Sound=%u, Type=%u, Language=%u, Emote=%u",
-        iTextEntry, pData->SoundId, pData->Type, pData->LanguageId, pData->Emote);
+              iTextEntry, pData->SoundId, pData->Type, pData->LanguageId, pData->Emote);
 
-    if (pData->Type != CHAT_TYPE_ZONE_YELL)
+    if (pData->Type != CHAT_TYPE_ZONE_YELL && pData->Type != CHAT_TYPE_ZONE_EMOTE)
     {
         script_error_log("DoSimulateScriptTextForMap entry %i has not supported chat type %u.", iTextEntry, pData->Type);
         return;
@@ -111,10 +111,12 @@ void DoOrSimulateScriptTextForMap(int32 iTextEntry, uint32 uiCreatureEntry, Map*
     if (pData->SoundId)
         pMap->PlayDirectSoundToMap(pData->SoundId);
 
+    ChatMsg chatMsg = (pData->Type == CHAT_TYPE_ZONE_EMOTE ? CHAT_MSG_MONSTER_EMOTE : CHAT_MSG_MONSTER_YELL);
+
     if (pCreatureSource)                                // If provided pointer for sayer, use direct version
-        pMap->MonsterYellToMap(pCreatureSource->GetObjectGuid(), iTextEntry, pData->LanguageId, pTarget);
+        pMap->MonsterYellToMap(pCreatureSource->GetObjectGuid(), iTextEntry, chatMsg, pData->LanguageId, pTarget);
     else                                                // Simulate yell
-        pMap->MonsterYellToMap(pInfo, iTextEntry, pData->LanguageId, pTarget);
+        pMap->MonsterYellToMap(pInfo, iTextEntry, chatMsg, pData->LanguageId, pTarget);
 }
 
 //*********************************
@@ -236,7 +238,7 @@ uint32 ScriptDevAIMgr::GetDialogStatus(const Player* pPlayer, const GameObject* 
 
 bool ScriptDevAIMgr::OnQuestAccept(Player* pPlayer, Creature* pCreature, const Quest* pQuest)
 {
-    Script* pTempScript =GetScript(pCreature->GetScriptId());
+    Script* pTempScript = GetScript(pCreature->GetScriptId());
 
     if (!pTempScript || !pTempScript->pQuestAcceptNPC)
         return false;
@@ -278,6 +280,16 @@ bool ScriptDevAIMgr::OnGameObjectUse(Player* pPlayer, GameObject* pGo)
         return false;
 
     return pTempScript->pGOUse(pPlayer, pGo);
+}
+
+std::function<bool(Unit*)>* ScriptDevAIMgr::OnTrapSearch(GameObject* go)
+{
+    Script* pTempScript = GetScript(go->GetGOInfo()->ScriptId);
+
+    if (!pTempScript)
+        return nullptr;
+
+    return pTempScript->pTrapSearching;
 }
 
 bool ScriptDevAIMgr::OnQuestRewarded(Player* pPlayer, Creature* pCreature, Quest const* pQuest)
@@ -325,14 +337,24 @@ bool ScriptDevAIMgr::OnProcessEvent(uint32 uiEventId, Object* pSource, Object* p
     return pTempScript->pProcessEventId(uiEventId, pSource, pTarget, bIsStart);
 }
 
-CreatureAI* ScriptDevAIMgr::GetCreatureAI(Creature* pCreature)
+UnitAI* ScriptDevAIMgr::GetCreatureAI(Creature* pCreature) const
 {
-    Script* pTempScript =GetScript(pCreature->GetScriptId());
+    Script* pTempScript = GetScript(pCreature->GetScriptId());
 
     if (!pTempScript || !pTempScript->GetAI)
         return nullptr;
 
     return pTempScript->GetAI(pCreature);
+}
+
+GameObjectAI* ScriptDevAIMgr::GetGameObjectAI(GameObject* gameobject) const
+{
+    Script* pTempScript = GetScript(gameobject->GetScriptId());
+
+    if (!pTempScript || !pTempScript->GetGameObjectAI)
+        return nullptr;
+
+    return pTempScript->GetGameObjectAI(gameobject);
 }
 
 bool ScriptDevAIMgr::OnItemUse(Player* pPlayer, Item* pItem, SpellCastTargets const& targets)
@@ -343,6 +365,16 @@ bool ScriptDevAIMgr::OnItemUse(Player* pPlayer, Item* pItem, SpellCastTargets co
         return false;
 
     return pTempScript->pItemUse(pPlayer, pItem, targets);
+}
+
+bool ScriptDevAIMgr::OnItemLoot(Player* pPlayer, Item* pItem, bool apply)
+{
+    Script* pTempScript = GetScript(pItem->GetProto()->ScriptId);
+
+    if (!pTempScript || !pTempScript->pItemLoot)
+        return false;
+
+    return pTempScript->pItemLoot(pPlayer, pItem, apply);
 }
 
 bool ScriptDevAIMgr::OnEffectDummy(Unit* pCaster, uint32 spellId, SpellEffectIndex effIndex, Creature* pTarget, ObjectGuid originalCasterGuid)
@@ -454,10 +486,9 @@ void ScriptDevAIMgr::Initialize()
     // Load database (must be called after SD2Config.SetSource).
     LoadDatabase();
 
-    outstring_log("SD2: Loading C++ scripts");
+    outstring_log("SD2: Loading C++ scripts\n");
     BarGoLink bar(1);
     bar.step();
-    outstring_log();
 
     // Resize script ids to needed amount of assigned ScriptNames (from core)
     m_scripts.resize(GetScriptIdsCount(), nullptr);
@@ -475,8 +506,7 @@ void ScriptDevAIMgr::Initialize()
 
     outstring_log(">> Loaded %i C++ Scripts.", num_sc_scripts);
 #else
-    outstring_log();
-    outstring_log(">> ScriptDev is disabled!");
+    outstring_log(">> ScriptDev is disabled!\n");
 #endif
 }
 
@@ -484,19 +514,19 @@ void ScriptDevAIMgr::LoadScriptNames()
 {
     m_scriptNames.push_back("");
     QueryResult* result = WorldDatabase.Query(
-        "SELECT DISTINCT(ScriptName) FROM creature_template WHERE ScriptName <> '' "
-        "UNION "
-        "SELECT DISTINCT(ScriptName) FROM gameobject_template WHERE ScriptName <> '' "
-        "UNION "
-        "SELECT DISTINCT(ScriptName) FROM item_template WHERE ScriptName <> '' "
-        "UNION "
-        "SELECT DISTINCT(ScriptName) FROM scripted_areatrigger WHERE ScriptName <> '' "
-        "UNION "
-        "SELECT DISTINCT(ScriptName) FROM scripted_event_id WHERE ScriptName <> '' "
-        "UNION "
-        "SELECT DISTINCT(ScriptName) FROM instance_template WHERE ScriptName <> '' "
-        "UNION "
-        "SELECT DISTINCT(ScriptName) FROM world_template WHERE ScriptName <> ''");
+                              "SELECT DISTINCT(ScriptName) FROM creature_template WHERE ScriptName <> '' "
+                              "UNION "
+                              "SELECT DISTINCT(ScriptName) FROM gameobject_template WHERE ScriptName <> '' "
+                              "UNION "
+                              "SELECT DISTINCT(ScriptName) FROM item_template WHERE ScriptName <> '' "
+                              "UNION "
+                              "SELECT DISTINCT(ScriptName) FROM scripted_areatrigger WHERE ScriptName <> '' "
+                              "UNION "
+                              "SELECT DISTINCT(ScriptName) FROM scripted_event_id WHERE ScriptName <> '' "
+                              "UNION "
+                              "SELECT DISTINCT(ScriptName) FROM instance_template WHERE ScriptName <> '' "
+                              "UNION "
+                              "SELECT DISTINCT(ScriptName) FROM world_template WHERE ScriptName <> ''");
 
     if (!result)
     {
@@ -515,7 +545,8 @@ void ScriptDevAIMgr::LoadScriptNames()
         bar.step();
         m_scriptNames.push_back((*result)[0].GetString());
         ++count;
-    } while (result->NextRow());
+    }
+    while (result->NextRow());
     delete result;
 
     std::sort(m_scriptNames.begin(), m_scriptNames.end());
@@ -574,7 +605,8 @@ void ScriptDevAIMgr::LoadAreaTriggerScripts()
         }
 
         m_AreaTriggerScripts[triggerId] = GetScriptId(scriptName);
-    } while (result->NextRow());
+    }
+    while (result->NextRow());
 
     delete result;
 
@@ -617,10 +649,11 @@ void ScriptDevAIMgr::LoadEventIdScripts()
         std::set<uint32>::const_iterator itr = eventIds.find(eventId);
         if (itr == eventIds.end())
             sLog.outErrorDb("Table `scripted_event_id` has id %u not referring to any gameobject_template type 10 data2 field, type 3 data6 field, type 13 data 2 field, type 29 or any spell effect %u or path taxi node data",
-                eventId, SPELL_EFFECT_SEND_EVENT);
+                            eventId, SPELL_EFFECT_SEND_EVENT);
 
         m_EventIdScripts[eventId] = GetScriptId(scriptName);
-    } while (result->NextRow());
+    }
+    while (result->NextRow());
 
     delete result;
 

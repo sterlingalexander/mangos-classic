@@ -215,16 +215,21 @@ int Master::Run()
     }
 
     {
-        //auto const listenIP = sConfig.GetStringDefault("BindIP", "0.0.0.0");
-        MaNGOS::Listener<WorldSocket> listener(sWorld.getConfig(CONFIG_UINT32_PORT_WORLD), 8);
+        int32 networkThreadWorker = sConfig.GetIntDefault("Network.Threads", 1);
+        if (networkThreadWorker <= 0)
+        {
+            sLog.outError("Invalid network tread workers setting in mangosd.conf. (%d) should be > 0", networkThreadWorker);
+            networkThreadWorker = 1;
+        }
+        MaNGOS::Listener<WorldSocket> listener(sConfig.GetStringDefault("BindIP", "0.0.0.0"), int32(sWorld.getConfig(CONFIG_UINT32_PORT_WORLD)), networkThreadWorker);
 
         std::unique_ptr<MaNGOS::Listener<RASocket>> raListener;
         if (sConfig.GetBoolDefault("Ra.Enable", false))
-            raListener.reset(new MaNGOS::Listener<RASocket>(sConfig.GetIntDefault("Ra.Port", 3443), 1));
+            raListener.reset(new MaNGOS::Listener<RASocket>(sConfig.GetStringDefault("Ra.IP", "0.0.0.0"), sConfig.GetIntDefault("Ra.Port", 3443), 1));
 
         std::unique_ptr<SOAPThread> soapThread;
         if (sConfig.GetBoolDefault("SOAP.Enabled", false))
-            soapThread.reset(new SOAPThread("0.0.0.0", sConfig.GetIntDefault("SOAP.Port", 7878)));
+            soapThread.reset(new SOAPThread(sConfig.GetStringDefault("SOAP.IP", "127.0.0.1"), sConfig.GetIntDefault("SOAP.Port", 7878)));
 
         // wait for shut down and then let things go out of scope to close them down
         while (!World::IsStopped())
@@ -491,9 +496,9 @@ void Master::_HookSignals()
 /// Unhook the signals before leaving
 void Master::_UnhookSignals()
 {
-    signal(SIGINT, 0);
-    signal(SIGTERM, 0);
+    signal(SIGINT, nullptr);
+    signal(SIGTERM, nullptr);
 #ifdef _WIN32
-    signal(SIGBREAK, 0);
+    signal(SIGBREAK, nullptr);
 #endif
 }
