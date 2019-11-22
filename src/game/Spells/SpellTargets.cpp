@@ -195,7 +195,7 @@ SpellEffectInfo SpellEffectInfoTable[MAX_SPELL_EFFECTS] =
     /*[94]*/     { "SPELL_EFFECT_SELF_RESURRECT",               TARGET_TYPE_NONE,           TARGET_NONE }, // confirmed none
     /*[95]*/     { "SPELL_EFFECT_SKINNING",                     TARGET_TYPE_UNIT,           TARGET_NONE },
     /*[96]*/     { "SPELL_EFFECT_CHARGE",                       TARGET_TYPE_UNIT,           TARGET_NONE },
-    /*[97]*/     { "SPELL_EFFECT_SUMMON_CRITTER",               TARGET_TYPE_UNIT_DEST,      TARGET_NONE },
+    /*[97]*/     { "SPELL_EFFECT_SUMMON_CRITTER",               TARGET_TYPE_LOCATION_DEST,  TARGET_NONE },
     /*[98]*/     { "SPELL_EFFECT_KNOCK_BACK",                   TARGET_TYPE_UNIT,           TARGET_NONE },
     /*[99]*/     { "SPELL_EFFECT_DISENCHANT",                   TARGET_TYPE_ITEM,           TARGET_NONE },
     /*[100]*/    { "SPELL_EFFECT_INEBRIATE",                    TARGET_TYPE_UNIT,           TARGET_NONE },
@@ -221,7 +221,7 @@ SpellEffectInfo SpellEffectInfoTable[MAX_SPELL_EFFECTS] =
     /*[120]*/    { "SPELL_EFFECT_TELEPORT_GRAVEYARD",           TARGET_TYPE_UNIT,           TARGET_NONE },
     /*[121]*/    { "SPELL_EFFECT_NORMALIZED_WEAPON_DMG",        TARGET_TYPE_UNIT,           TARGET_NONE },
     /*[122]*/    { "SPELL_EFFECT_122",                          TARGET_TYPE_UNKNOWN,        TARGET_NONE },
-    /*[123]*/    { "SPELL_EFFECT_SEND_TAXI",                    TARGET_TYPE_UNIT,           TARGET_UNIT_CASTER },
+    /*[123]*/    { "SPELL_EFFECT_SEND_TAXI",                    TARGET_TYPE_UNIT,           TARGET_UNIT },
     /*[124]*/    { "SPELL_EFFECT_PULL_TOWARDS",                 TARGET_TYPE_UNIT,           TARGET_NONE },
     /*[125]*/    { "SPELL_EFFECT_MODIFY_THREAT_PERCENT",        TARGET_TYPE_UNIT,           TARGET_NONE },
     /*[126]*/    { "SPELL_EFFECT_STEAL_BENEFICIAL_BUFF",        TARGET_TYPE_UNIT,           TARGET_NONE },
