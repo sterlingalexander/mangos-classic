@@ -76,6 +76,7 @@ void PetAI::MoveInLineOfSight(Unit* who)
 
     if (HasReactState(REACT_AGGRESSIVE)
             && !(pet && pet->GetModeFlags() & PET_MODE_DISABLE_ACTIONS)
+            && !(who->GetTypeId() == TYPEID_UNIT && static_cast<Creature*>(who)->IsCivilian())
             && m_creature->CanAttackOnSight(who) && who->isInAccessablePlaceFor(m_unit)
             && m_unit->IsWithinDistInMap(who, m_unit->GetAttackDistance(who))
             && m_unit->GetDistanceZ(who) <= CREATURE_Z_ATTACK_RANGE
@@ -226,10 +227,6 @@ void PetAI::UpdateAI(const uint32 diff)
 
                         // allow only spell not on cooldown
                         if (cooldown != 0 && duration < cooldown)
-                            continue;
-
-                        // not allow instant kill auto casts as full health cost
-                        if (IsSpellHaveEffect(spellInfo, SPELL_EFFECT_INSTAKILL))
                             continue;
                     }
                 }
@@ -385,8 +382,10 @@ void PetAI::UpdateAllies()
         return;
 
     m_AllySet.clear();
-    m_AllySet.insert(m_unit->GetObjectGuid());
-    if (group)                                             // add group
+    m_AllySet.insert(m_unit->GetObjectGuid());  // add self
+    m_AllySet.insert(owner->GetObjectGuid());   // add owner
+
+    if (group)                                  // add group
     {
         for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
@@ -400,8 +399,6 @@ void PetAI::UpdateAllies()
             m_AllySet.insert(target->GetObjectGuid());
         }
     }
-    else                                                    // remove group
-        m_AllySet.insert(owner->GetObjectGuid());
 }
 
 void PetAI::AttackedBy(Unit* attacker)

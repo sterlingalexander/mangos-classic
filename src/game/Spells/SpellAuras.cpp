@@ -922,20 +922,8 @@ void Aura::TriggerSpell()
                         return;
                     }
                     // Stalagg Chain and Feugen Chain
-                    case 28096:
-                    case 28111:
-                    {
-                        // X-Chain is casted by Tesla to X, so: caster == Tesla, target = X
-                        Unit* pCaster = GetCaster();
-                        if (pCaster && pCaster->GetTypeId() == TYPEID_UNIT && !pCaster->IsWithinDistInMap(target, 60.0f))
-                        {
-                            pCaster->InterruptNonMeleeSpells(true);
-                            ((Creature*)pCaster)->SetInCombatWithZone();
-                            // Stalagg Tesla Passive or Feugen Tesla Passive
-                            pCaster->CastSpell(pCaster, auraId == 28096 ? 28097 : 28109, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, target->GetObjectGuid());
-                        }
-                        return;
-                    }
+                    // case 28096:
+                    // case 28111:
                     // Icebolt
                     case 28522:
                     {
@@ -1566,7 +1554,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                     if (apply)
                     {
                         target->SetStandState(UNIT_STAND_STATE_CUSTOM);
-                        if (target->GetTypeId() == TYPEID_UNIT)
+                        if (target->GetTypeId() == TYPEID_UNIT && target->GetEntry() == 16236)
                             ((Creature*)target)->ForcedDespawn(700);
                     }
                     else
